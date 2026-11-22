@@ -344,8 +344,12 @@ footer a{color:var(--ink)}
     return false;
   }
 
+  // StackStrip's own stand-ins (from this table or another) are never aliased again,
+  // so pasting already-stripped text is a no-op instead of a second layer of aliases.
+  const OWN_ALIAS = /^(?:app\.mod\d+(?:\.[\w$]+)*|Class\d+|method\d+|AppError\d+|func\d+|str\d+|host\d+\.example\.internal|mail\d+@example\.com|192\.0\.2\.\d+|ID-\d+|user\d+|machine\d+|project\d+|Person\d+|org\d+|service\d+|bucket\d+|Name\d+|value\d+|App\.Ns\d+|example\.com\/app\/pkg\d+|\/app\/path\d+(?:\.\w+)?)$/;
   function aliasFor(table, kind, original, ext) {
     if (isKept(original)) return original;
+    if (table.kinds[original] || OWN_ALIAS.test(original)) return original;
     const key = kind + '\u0000' + original;
     if (table.forward[key]) return table.forward[key];
     const n = (table.counters[kind] || 0) + 1;
@@ -2029,7 +2033,7 @@ footer a{color:var(--ink)}
     return { text: t, count };
   }
 
-  return { strip, restore, looksLikeLog, containsKnown, hideNames, detectKinds, createAliasTable, aliasCount, DEFAULTS, version: '0.5.2' };
+  return { strip, restore, looksLikeLog, containsKnown, hideNames, detectKinds, createAliasTable, aliasCount, DEFAULTS, version: '0.5.3' };
 });
 </script>
 <script>

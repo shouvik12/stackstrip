@@ -1,6 +1,6 @@
 {
   "name": "stackstrip",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Debug the failure, not the company's internals. Strips company code from logs and stack traces before you paste into AI chats.",
   "main": "src/engine.js",
   "scripts": {

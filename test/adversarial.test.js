@@ -130,3 +130,18 @@ test('database and service logins are hidden, generic ones kept', () => {
   assert.ok(r.text.includes('"postgres"'), 'generic postgres user kept');
   assert.ok(/password authentication failed for user "user\d+"/.test(r.text), r.text);
 });
+
+test('pasting already-stripped text changes nothing (no second layer of stand-ins)', () => {
+  const log = [
+    'java.lang.IllegalStateException: SilverOrchidPartner exceeded unpublished 14.5% payout threshold',
+    '\tat com.novaforge.claims.RulePilot.reconcile(RulePilot.java:88)',
+    '\tat com.novaforge.claims.PayoutService.runBatch(PayoutService.java:214)',
+    'Caused by: java.sql.SQLException: Connection refused: ledger-db-02.prod.novaforge.internal:5432 (user svc_payouts)',
+    'Escalate to dana.kim@novaforge.io',
+  ].join('\n');
+  const t = S.createAliasTable();
+  const once = S.strip(log, {}, t).text;
+  assert.strictEqual(S.strip(once, {}, t).text, once, 'same alias table');
+  assert.strictEqual(S.strip(once, {}, S.createAliasTable()).text, once, 'fresh alias table (e.g. another tab or after Forget)');
+  assert.ok(S.restore(S.strip(once, {}, t).text, t).text.includes('RulePilot.reconcile'));
+});
