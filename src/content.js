@@ -537,6 +537,7 @@
   }
 
   // What "Don't hide" adds: a whole library for packages/namespaces, the exact name otherwise.
+  const plural = (w, n) => n < 2 || /\)$/.test(w) ? w : /(?:s|x|z|ch|sh)$/i.test(w) ? w + 'es' : /[^aeiou]y$/i.test(w) ? w.slice(0, -1) + 'ies' : w + 's';
   const keepValue = (r) => (r.kind === 'pkg' || r.kind === 'ns') ? r.original.split('.').slice(0, 2).join('.') + '.' : r.original;
   const keepLabel = (r) => (r.kind === 'pkg' || r.kind === 'ns') ? 'Don\'t hide ' + r.original.split('.').slice(0, 2).join('.') + '.*' : 'Don\'t hide';
   // "What was hidden": every original → stand-in, grouped; secrets only by type with a masked hint.
@@ -553,7 +554,7 @@
         '</td><td class="ar">→</td><td class="a sec">&lt;secret&gt;</td><td class="c">×' + s.count + '</td></tr>').join('') + '</table>';
     }
     for (const [label, rows] of groups) {
-      h += '<h4>' + esc(label) + (rows.length > 1 ? 's' : '') + ' <span class="m">' + rows.length + '</span></h4><table>' + rows.map((r) =>
+      h += '<h4>' + esc(plural(label, rows.length)) + ' <span class="m">' + rows.length + '</span></h4><table>' + rows.map((r) =>
         '<tr><td class="o">' + esc(r.original) + '</td><td class="ar">→</td><td class="a">' + esc(r.alias) + '</td><td class="c">×' + r.count +
         '</td><td class="k"><button class="keep" data-k="' + esc(keepValue(r)) + '" title="This is public — show it as is, now and in future pastes">' + esc(keepLabel(r)) + '</button></td></tr>').join('') + '</table>';
     }
