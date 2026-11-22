@@ -1,14 +1,30 @@
 {
   "name": "stackstrip",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Debug the failure, not the company's internals. Strips company code from logs and stack traces before you paste into AI chats.",
   "main": "src/engine.js",
   "scripts": {
-    "test": "node --test test/engine.test.js",
+    "test": "node --test test/engine.test.js test/adversarial.test.js",
+    "docs": "node scripts/before-after.js",
     "build:demo": "node scripts/build-demo.js",
-    "zip": "node scripts/build-demo.js && rm -f stackstrip.zip && zip -r stackstrip.zip manifest.json src icons LICENSE -x 'icons/icon512.png'"
+    "zip": "node scripts/build-demo.js && rm -f stackstrip.zip && zip -r stackstrip.zip manifest.json src icons LICENSE -x 'icons/icon512.png'",
+    "score": "node scripts/score.js && node scripts/adversarial-report.js",
+    "test:browser": "node test/browser/e2e-security.js"
   },
   "license": "Apache-2.0",
   "repository": "github:shouvik12/stackstrip",
-  "keywords": ["chrome-extension", "logs", "stack-trace", "redaction", "privacy", "llm", "claude", "chatgpt"]
+  "keywords": [
+    "chrome-extension",
+    "logs",
+    "stack-trace",
+    "redaction",
+    "privacy",
+    "llm",
+    "claude",
+    "chatgpt"
+  ],
+  "devDependencies": {
+    "js-yaml": "^4.3.2",
+    "puppeteer-core": "^23.11.1"
+  }
 }

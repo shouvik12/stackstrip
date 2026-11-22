@@ -175,6 +175,7 @@ footer a{color:var(--ink)}
     privateDomains: [],       // e.g. ["acme.com"] — hosts on these become aliases
     hideIdentity: true,       // usernames, machine names, home folders, git author names
     noCut: true,              // default: never drop lines, only hide. false = trim long logs to the failure
+    codeNames: 'business',    // 'business' = rename declared names that point at the business; 'all' = every declared name
     keepVisible: [],          // never hide these: exact names, or library prefixes like "org.bouncycastle."
   };
 
@@ -312,11 +313,19 @@ footer a{color:var(--ink)}
     ip: (n) => n <= 254 ? '192.0.2.' + n : '198.51.100.' + ((n - 254) % 254 || 1),
     uuid: (n) => '00000000-0000-4000-8000-' + String(n).padStart(12, '0'),
     term: (n) => 'Term' + n,
+    gopkg: (n) => 'example.com/app/pkg' + n,
     ns: (n) => 'App.Ns' + n,
     path: (n, ext) => '/app/path' + n + (ext || ''),
     domain: (n) => 'domain' + n + '.example',
     bucket: (n) => 'bucket' + n,
     service: (n) => 'service' + n,
+    name: (n) => 'Name' + n,
+    var: (n) => 'var' + n,
+    table: (n) => 'table' + n,
+    col: (n) => 'col' + n,
+    int: (n) => String(900000 + n),
+    dec: (n) => '0.' + String(9000 + n),
+    val: (n) => 'value' + n,
     word: (n) => 'org' + n,
     user: (n) => 'user' + n,
     machine: (n) => 'machine' + n,
@@ -343,6 +352,7 @@ footer a{color:var(--ink)}
     table.counters[kind] = n;
     const alias = TEMPLATES[kind](n, ext);
     table.forward[key] = alias;
+    table.ver = (table.ver || 0) + 1;
     table.kinds[alias] = kind;
     return alias;
   }
@@ -459,7 +469,7 @@ footer a{color:var(--ink)}
       else if (SVC_KEYS.test(core)) {
         // a pod name is <workload>-<replicaset hash>-<pod id> (or <workload>-<ordinal>): hide the workload name everywhere
         const base = val.replace(/-[a-z0-9]{8,10}-[a-z0-9]{5}$/, '').replace(/-[a-z0-9]{5}$/, '').replace(/-\d+$/, '');
-        if (base.length >= 4 && !GENERIC_WORDS.test(base)) aliasFor(ctx.table, 'service', base.toLowerCase());
+        if (base.length >= 4 && !GENERIC_WORDS.test(base) && !PUBLIC_IMAGES.test(base) && !PUBLIC_KEBAB.test(base)) aliasFor(ctx.table, 'service', base.toLowerCase());
       }
       else if (WORD_KEYS.test(core)) aliasFor(ctx.table, 'word', val.toLowerCase());
       else if (ID_KEYS.test(core)) aliasFor(ctx.table, 'id', val);
@@ -540,27 +550,50 @@ footer a{color:var(--ink)}
   }
 
   // Replace every learned username / machine / person, on any line.
-  function hideIdentity(text, ctx) {
-    if (typeof text !== 'string') return text;
+  // Swap every learned name for its alias. Built once per call into three combined regexes
+  // (instead of one regex per name per line), so big pastes stay fast.
+  const GLOBAL_KINDS = ['user', 'machine', 'person', 'dir', 'domain', 'bucket', 'word', 'host', 'service', 'id', 'name', 'var', 'table', 'col', 'str', 'func'];
+  const WORDLIKE = new Set(['word', 'service', 'id', 'name', 'var', 'func', 'str', 'col', 'table']);
+  const CASE_SENS = new Set(['name', 'var', 'func', 'str', 'col', 'table']);
+  function buildIdentityMatcher(ctx) {
     const T = ctx.table;
-    let t = text;
+    const sig = (T.ver || 0) + '|' + Object.keys(T.g || {}).length + '|' + (KEEP ? KEEP.size : 0) + '|' + ctx.o.hideIdentity;
+    if (ctx._idm && ctx._idm.sig === sig) return ctx._idm;
+    const groups = { cs: new Map(), ci: new Map(), dot: new Map() };
     for (const key of Object.keys(T.forward)) {
       const i = key.indexOf('\u0000');
       const kind = key.slice(0, i);
-      if (!['user', 'machine', 'person', 'dir', 'domain', 'bucket', 'word', 'host', 'service', 'id'].includes(kind)) continue;
+      if (!GLOBAL_KINDS.includes(kind)) continue;
       if (!ctx.o.hideIdentity && ['user', 'machine', 'person', 'dir'].includes(kind)) continue;
-      if (kind === 'word' && KEEP && [...KEEP].some((k) => k.toLowerCase().split(/[.\/]/).includes(key.slice(i + 1)))) continue;
       const orig = key.slice(i + 1);
+      if (kind === 'word' && KEEP && [...KEEP].some((k) => k.toLowerCase().split(/[.\/]/).includes(orig))) continue;
+      if ((kind === 'func' || kind === 'str') && !(T.g && T.g[key])) continue;
       if (isKept(orig)) continue;
       if (orig.length < (kind === 'dir' || kind === 'word' ? 4 : 3)) continue;
       if (kind === 'id' && !/\d/.test(orig)) continue;
+      if (kind === 'name' && /^(?:Class|AppError|Name)\d+$/.test(orig)) continue;
       if (kind === 'host' && !/[.-]/.test(orig)) continue;
       if (kind === 'dir' && GENERIC_DIRS.test(orig)) continue;
-      t = t.replace(new RegExp((kind === 'word' || kind === 'service' || kind === 'id' ? '(?<![\\w])' : '(?<![\\w.])') + escapeRe(orig) + '(?![\\w])', 'gi'), T.forward[key]);
-      // possessive machine names: "Janes-MacBook-Pro" also covers "janes"
+      const g = CASE_SENS.has(kind) ? groups.cs : WORDLIKE.has(kind) ? groups.ci : groups.dot;
+      const k = g === groups.cs ? orig : orig.toLowerCase();
+      if (!g.has(k)) g.set(k, T.forward[key]);
     }
+    const mk = (map, before, flags) => {
+      if (!map.size) return null;
+      const alts = [...map.keys()].sort((a, b) => b.length - a.length).map(escapeRe).join('|');
+      return { re: new RegExp(before + '(?:' + alts + ')(?![\\w$])', flags), map, ci: flags.includes('i') };
+    };
+    ctx._idm = { sig, list: [mk(groups.dot, '(?<![\\w.])', 'gi'), mk(groups.ci, '(?<![\\w$])', 'gi'), mk(groups.cs, '(?<![\\w$])', 'g')].filter(Boolean) };
+    return ctx._idm;
+  }
+  function hideIdentity(text, ctx) {
+    if (typeof text !== 'string' || !text) return text;
+    const m = buildIdentityMatcher(ctx);
+    let t = text;
+    for (const g of m.list) t = t.replace(g.re, (x) => g.map.get(g.ci ? x.toLowerCase() : x) || x);
     return t;
   }
+
 
   // ---------------------------------------------------------------------------
   // Secrets — redacted outright, never stored, never restored
@@ -687,7 +720,8 @@ footer a{color:var(--ink)}
       });
 
     // bare hostnames: internal TLDs, private domains (configured or learned from links), and deep FQDNs
-    t = t.replace(/(?<![\w.@-])((?:[a-z0-9][a-z0-9-]*\.){1,}[a-z]{2,})\.?(?=[:\s/,;)'"\]}\\]|$)/gi, (m, host) => {
+    t = t.replace(/(?<![\w.@-])((?:[a-z0-9][a-z0-9-]*\.){1,}[a-z]{2,})\.?(?=[:\s/,;)'"\]}\\]|$)/gi, (m, host, off, str) => {
+      if (/^\/[\w.-]+:(?:\s|$)/.test(str.slice(off + m.length))) return m;   // label / annotation keys: app.kubernetes.io/name:
       if (/\.example\.(?:internal|com|org)$/i.test(host)) return m;
       const lower = host.toLowerCase();
       const labels = lower.split('.');
@@ -757,6 +791,10 @@ footer a{color:var(--ink)}
     /^(?:string|number|boolean|bigint|symbol|object|any|unknown|never|void|int|float|double|long|short|char|byte|bool|str|dict|list|tuple|set|bytes|NoneType|String|Integer|Long|Double|Boolean|Object|Number|Array|Promise|Date|Map|Set|Record|Function|int32|int64|uint|float64|string\[\]|number\[\])(?:\s*\|\s*(?:undefined|null))?$/,
     /^app\/(?:module|file)\d+/, /^(?:https?|wss?):\/\//, /^host\d+\.example\.internal/, /^[\w.+-]+@example\.com$/,
     /^\\[rnt]$/,
+    /^[\w$.]+\(.*\)$/,                       // "String.length()", "list.get(0)"
+    /^[A-Za-z_$][\w$]{0,2}$/,                 // "s", "id", "arr": local variable names
+    /^(?:java|javax|kotlin|scala)\.[\w.$]+$/, // a JDK type
+    /^(?:String|Integer|Long|Double|Boolean|Object|List|Map|Set|Optional|int|long|double|boolean|char|byte|this|null|undefined)(?:\[\])?$/,
     /^(?:http-nio|https-jsse-nio|http-bio|nio|exec|pool|thread|main|worker|scheduling|task|async|ForkJoinPool|reactor|boundedElastic|parallel|kafka|grpc|netty|qtp|default|catalina|Timer|Finalizer|Signal Dispatcher)[\w.-]*$/i,
   ];
   function aliasQuoted(text, ctx, depth) {
@@ -792,6 +830,7 @@ footer a{color:var(--ink)}
   // Names we already aliased elsewhere (frames, headers) mentioned bare in messages.
   function replaceKnownNames(text, ctx) {
     const T = ctx.table;
+    if (ctx._known && ctx._known.ver === (T.ver || 0) + '|' + (KEEP ? KEEP.size : 0)) return ctx._known.re ? text.replace(ctx._known.re, (x) => ctx._known.map.get(x) || x) : text;
     const pairs = [];
     for (const key of Object.keys(T.forward)) {
       const i = key.indexOf('\u0000');
@@ -804,13 +843,11 @@ footer a{color:var(--ink)}
       if (!identLike || orig.length < 4) continue;
       pairs.push([orig, T.forward[key]]);
     }
-    if (!pairs.length) return text;
+    const ver = (T.ver || 0) + '|' + (KEEP ? KEEP.size : 0);
+    if (!pairs.length) { ctx._known = { ver, re: null }; return text; }
     pairs.sort((a, b) => b[0].length - a[0].length);
-    let t = text;
-    for (const [orig, alias] of pairs) {
-      t = t.replace(new RegExp('(?<![\\w$])' + escapeRe(orig) + '(?![\\w$])', 'g'), alias);
-    }
-    return t;
+    ctx._known = { ver, map: new Map(pairs), re: new RegExp('(?<![\\w$])(?:' + pairs.map((p) => escapeRe(p[0])).join('|') + ')(?![\\w$])', 'g') };
+    return text.replace(ctx._known.re, (x) => ctx._known.map.get(x) || x);
   }
 
   function replacePrivateTerms(text, ctx) {
@@ -878,6 +915,9 @@ footer a{color:var(--ink)}
     jsFrameNoLoc: /^(\s*)at\s+(.+?)\s+\((native|<anonymous>|index \d+)\)\s*$/,
     jsFrameBare: /^(\s*)at\s+(async\s+)?([\w$.<>\[\] ]+?)\s*$/,
     ffFrame: /^(\s*)([\w$.<>/[\]]*)@(.+?):(\d+):(\d+)\s*$/,
+    goFrame: /^(\s*)((?:[\w.~-]+\/)*[\w.~-]+?)\.((?:\(\*?[\w]+\)\.)?[\w]+(?:\.func\d+(?:\.\d+)*)?(?:\[[^\]]*\])?)\((.*)\)\s*$/,
+    goFile: /^(\s+)(\S+\.go):(\d+)(\s\+0x[0-9a-f]+)?\s*$/,
+    goHeader: /^(?:panic: |fatal error: |goroutine \d+ \[|\[signal |created by )/,
     nodeLocHeader: /^((?:file:\/\/)?(?:\/|[A-Za-z]:\\|\.\/)[^\s:]+\.(?:js|mjs|cjs|ts|mts|cts|jsx|tsx)):(\d+)\s*$/,
     excHeader: /^(\s*)((?:Exception in thread "[^"]*"\s+)?(?:Caused by:\s*|Suppressed:\s*|Wrapped by:\s*|Unhandled exception\.\s*|Unhandled Exception:\s*)?)((?:[A-Za-z_$][\w$]*\.)+[A-Z][\w$]*?(?:Exception|Error|Throwable|Fault|Failure|Exit|Interrupt|Warning)[\w$]*)(?:(:\s?)(.*))?$/,
     simpleErr: /^(\s*)((?:Uncaught\s+(?:\(in promise\)\s+)?|Unhandled Rejection:?\s+|Error:\s+(?=\w+Error))?)([A-Z][\w$]*(?:Error|Exception|Exit|Interrupt|Warning|Fault))(\s*\[[\w-]+\])?(?:(:\s?)(.*))?$/,
@@ -888,6 +928,9 @@ footer a{color:var(--ink)}
   };
 
   const SECTION_RE = /^(?:TASK|PLAY|RUNNING HANDLER|HANDLER) \[|^##\[group\]|^==> |^> Task :|^\[\d+\/\d+\] |^Step \d+\/\d+ :|^#\d+ \[|^\s*\[INFO\] --- [\w.-]+:|^-{3,} ?\[?[A-Za-z]/;
+
+  // Go: standard library (no dot in the first path segment) and well-known public modules stay readable.
+  const GO_PUBLIC = /^(?:[a-z0-9]+(?:\/|$)(?!.*\.)|golang\.org\/|google\.golang\.org\/|gopkg\.in\/|go\.uber\.org\/|k8s\.io\/|sigs\.k8s\.io\/|go\.opentelemetry\.io\/|cloud\.google\.com\/|go\.mongodb\.org\/|go\.etcd\.io\/|gorm\.io\/|entgo\.io\/|github\.com\/(?:golang|google|gin-gonic|gorilla|labstack|go-chi|gofiber|stretchr|spf13|sirupsen|uber-go|jackc|lib|go-redis|redis|aws|hashicorp|prometheus|grpc|grpc-ecosystem|kubernetes|cockroachdb|segmentio|rs|valyala|urfave|go-sql-driver|mattn|pkg|davecgh|pmezard|golang-jwt|dgrijalva|julienschmidt|klauspost|cespare|json-iterator|modern-go|go-playground|go-logr|cenkalti|avast|docker|containerd|opencontainers|moby|etcd-io|nats-io|confluentinc|Shopify|IBM|elastic|olivere|minio|jmoiron|Masterminds|BurntSushi|fsnotify|mitchellh|hashicorp|joho|kelseyhightower|caarlos0|charmbracelet|cli|ory|coreos|opentracing|openzipkin|DataDog|getsentry|newrelic|twmb|ugorji|vmihailenco|tidwall|bytedance|cloudwego)\/)/;
 
   function isPromptLine(line) {
     return PROMPT_RES.some((re) => re.test(line)) || /^\s*PS\s+[A-Za-z]:\\[^>]*>/.test(line) || /^\s*(?:➜|→|λ)\s+\S+/.test(line);
@@ -992,6 +1035,23 @@ footer a{color:var(--ink)}
     return { kind: 'private', lang: 'py', text: indent + 'File "' + aPath + '", line ' + line + (aFn ? ', in ' + aFn : '') };
   }
 
+  function rewriteGoPkg(pkg, ctx) {
+    const hm = /^((?:github\.com|gitlab\.com|bitbucket\.org)\/)([\w.-]+)\//.exec(pkg);
+    if (hm && hm[2].length >= 3 && !GENERIC_WORDS.test(hm[2])) learnG(ctx, 'word', hm[2].toLowerCase());
+    else { const d = registrable(pkg.split('/')[0]); if (d && /\./.test(pkg.split('/')[0]) && !isPublicHost(d, ctx)) aliasFor(ctx.table, 'domain', d); }
+    return aliasFor(ctx.table, 'gopkg', pkg);
+  }
+  function rewriteGoFn(fn, ctx) {
+    // (*Engine).Apply, Apply.func1, Settle[...]
+    return fn.replace(/\((\*?)(\w+)\)/, (x, star, t) => '(' + star + aliasClassName(t, ctx) + ')')
+      .replace(/(^|\.)([A-Za-z_]\w*)(?=$|\.func|\[)/, (x, dot, f) => dot + (GENERIC_NAMES.has(f) ? f : aliasMethodName(f, ctx)));
+  }
+  function rewriteGoFunc(full, ctx) {
+    const m = /^((?:[\w.~-]+\/)*[\w.~-]+?)\.(.+)$/.exec(full);
+    if (!m || GO_PUBLIC.test(m[1]) || m[1] === 'main') return full;
+    return rewriteGoPkg(m[1], ctx) + '.' + rewriteGoFn(m[2], ctx);
+  }
+
   function rewriteExcName(name, ctx) {
     if (PUBLIC_ERRORS.has(name)) return name;
     if (name.includes('.')) {
@@ -1067,6 +1127,27 @@ footer a{color:var(--ink)}
           pyMode = false; pyAfterFrame = false;
           continue;
         }
+      }
+
+      // Go panics / goroutine dumps
+      if (RE.goHeader.test(raw)) {
+        const gm = /^(panic: |fatal error: )(.*)$/.exec(raw);
+        if (gm) out.push({ type: 'header', raw, text: gm[1], msg: gm[2] });
+        else out.push({ type: 'trace', raw, text: raw.replace(/^created by\s+(\S+)/, (x, fn) => 'created by ' + rewriteGoFunc(fn, ctx)).trimEnd() });
+        continue;
+      }
+      if ((m = RE.goFrame.exec(raw)) && /\//.test(m[2] + '/') && (lines[i + 1] || '').match(RE.goFile)) {
+        const pub = GO_PUBLIC.test(m[2]) || m[2] === 'main';
+        const text = m[1] + (pub ? m[2] + '.' + m[3] : rewriteGoPkg(m[2], ctx) + '.' + rewriteGoFn(m[3], ctx)) + '(' + m[4] + ')';
+        out.push({ type: 'frame', raw, text, kind: pub ? 'public' : 'private', group: pub ? m[2].split('/')[0] : undefined, lang: 'go' });
+        pub ? ctx.stats.publicFrames++ : ctx.stats.privateFrames++;
+        continue;
+      }
+      if ((m = RE.goFile.exec(raw))) {
+        const path = m[2];
+        const pub = /\/(?:usr\/local\/go|go\/src\/runtime|go\/pkg\/mod\/(?:golang\.org|google\.golang\.org|github\.com\/(?:gin-gonic|gorilla|labstack|stretchr|spf13|aws|hashicorp|prometheus|grpc)))\//.test(path) || /^\/?(?:usr\/)?(?:local\/)?go\/src\/[a-z]+\//.test(path);
+        out.push({ type: 'frame', raw, text: m[1] + (pub ? path.replace(/^.*?\/go\/(?:src|pkg\/mod)\//, '$GOROOT/') : aliasFor(ctx.table, 'path', path, '.go')) + ':' + m[3] + (m[4] || ''), kind: pub ? 'public' : 'private', lang: 'go' });
+        continue;
       }
 
       // JVM: java frame vs .NET frame
@@ -1344,6 +1425,10 @@ footer a{color:var(--ink)}
     learnIdentity(secretsFree, ctx);
     learnDomains(secretsFree, ctx);
     learnKeyed(secretsFree, ctx);
+    learnStructured(secretsFree, ctx);
+    learnSql(secretsFree, ctx);
+    learnCode(secretsFree, ctx);
+    learnDeploy(secretsFree, ctx);
     const lines = secretsFree.split('\n');
     const items = classify(lines, ctx);
     const keep = select(items, ctx);
@@ -1371,6 +1456,7 @@ footer a{color:var(--ink)}
     }
 
     learnWords(ctx);
+    learnNames(secretsFree, ctx);
     // Second pass: sanitise free text now that the alias table knows every private name.
     kept = kept.map((l) => {
       if (l.type === 'log' && /^\s*\{.*\}\s*$/.test(l.text)) {
@@ -1389,7 +1475,11 @@ footer a{color:var(--ink)}
     while (kept.length && kept[0].type === 'blank') kept.shift();
     while (kept.length && kept[kept.length - 1].type === 'blank') kept.pop();
 
-    const text = kept.map((l) => l.text).join('\n');
+    let text = kept.map((l) => l.text).join('\n');
+    if (ctx.o.hideValues && ctx.o.hideValues.length) text = hideChosenValues(text, ctx.o.hideValues, ctx);
+    const kinds = detectKinds(normalized);
+    const foundPrivate = listReplacements(text, table).length > 0 || ctx.stats.secrets > 0;
+    const review = findReview(text, secretsFree, foundPrivate || kinds.some((k) => k !== 'prose'));
     ctx.stats.newAliases = aliasCount(table) - before;
 
     // which aliases actually appear in the output
@@ -1403,6 +1493,11 @@ footer a{color:var(--ink)}
     }
 
     const report = Object.assign({}, ctx.stats, {
+      review,
+      kinds,
+      // Protected: known patterns were hidden — never a guarantee that nothing sensitive is left.
+      // Review: something that might be confidential is still there and needs a human decision.
+      state: review.length ? 'review' : 'protected',
       replacements: listReplacements(text, table),
       secretList: groupSecrets(ctx.secretsFound),
       identityHidden: used.identity,
@@ -1415,11 +1510,13 @@ footer a{color:var(--ink)}
       languages: [...new Set(items.map((x) => x.lang).filter(Boolean))],
       hasTrace: items.some((x) => x.type === 'frame' || x.type === 'header'),
     });
-    return { text, table, report, changed: text.replace(/\s+$/, '') !== normalized.replace(/\s+$/, '') };
+    return { text, table, report, changed: text.replace(/\s+$/, '') !== normalized.replace(/\s+$/, ''), needsReview: review.length > 0 };
   }
 
   const KIND_LABEL = {
     user: 'Username', machine: 'Machine name', person: 'Person', dir: 'Project folder', branch: 'Git branch',
+    name: 'Name (company, customer, product…)', var: 'Variable / constant', table: 'SQL table', col: 'SQL column',
+    int: 'Hidden number', dec: 'Hidden number', val: 'Hidden value',
     domain: 'Domain', word: 'Company / project word', service: 'Service / workload', bucket: 'Storage bucket', host: 'Hostname', ip: 'IP address', email: 'Email', path: 'File path', srcfile: 'Source file',
     pyfile: 'Source file', jsfile: 'Source file', csfile: 'Source file', pkg: 'Package', ns: 'Namespace', cls: 'Class',
     exc: 'Exception', method: 'Method', func: 'Function', str: 'Quoted value', id: 'Business ID', uuid: 'UUID', term: 'Hidden word',
@@ -1484,6 +1581,7 @@ footer a{color:var(--ink)}
       if (RE.anyLevel.test(l) && /\d{2}:\d{2}:\d{2}/.test(l)) levels++;
       if (RE.excHeader.test(l)) frames++;
     }
+    if (/^(?:panic: |fatal error: |goroutine \d+ \[)/m.test(text)) return true;
     if (frames >= 1) return true;
     if (levels >= 3) return true;
     if (lines.length >= 2 && lines.some((l) => isPromptLine(l))) return true;
@@ -1491,6 +1589,409 @@ footer a{color:var(--ink)}
     if (/(?:\/Users\/|\/home\/|[A-Za-z]:\\Users\\)[A-Za-z0-9_]/.test(text) && lines.length >= 2) return true;
     for (const [, re] of SECRET_RULES) { re.lastIndex = 0; if (re.test(text)) return true; }
     return false;
+  }
+
+  // ===========================================================================
+  // Content-aware passes (v0.5): unknown names, source code, SQL, YAML/JSON values,
+  // deploy / image names, and review findings for what rules can't decide.
+  // ===========================================================================
+
+  // Well-known CamelCase words (products, platforms, common library classes) that are never hidden.
+  const PUBLIC_CAMEL = new Set((
+    'JavaScript TypeScript CoffeeScript ActionScript GitHub GitLab BitBucket Bitbucket PostgreSQL MySQL MariaDB MongoDB DynamoDB CosmosDB ' +
+    'BigQuery RedShift Redshift ElasticSearch Elasticsearch OpenSearch RabbitMQ ActiveMQ ZooKeeper CloudWatch CloudFront CloudFormation ' +
+    'CloudFlare Cloudflare DigitalOcean HashiCorp TeamCity BuildKite CircleCI TravisCI AppVeyor SonarQube SonarCloud ArgoCD FluxCD ' +
+    'DockerHub LocalStack MinIO CockroachDB TiDB ClickHouse InfluxDB TimescaleDB QuestDB GreptimeDB VictoriaMetrics OpenTelemetry ' +
+    'OpenTracing AppDynamics NewRelic DataDog Datadog PagerDuty OpsGenie ServiceNow SharePoint OneDrive OneNote PowerShell PowerPoint ' +
+    'VSCode IntelliJ PyCharm WebStorm GoLand CLion JetBrains NodeJS NextJS NuxtJS VueJS ReactJS AngularJS ExpressJS NestJS SvelteKit ' +
+    'DevOps GitOps FinOps SecOps MLOps DevSecOps YouTube LinkedIn WhatsApp TikTok iPhone iPad MacBook MacOS iOS ChatGPT OpenAI DeepSeek ' +
+    'HuggingFace TensorFlow PyTorch NumPy SciPy JUnit TestNG NUnit PyPI WordPress StackOverflow WebSocket WebSockets OAuth OpenID OpenAPI ' +
+    'GraphQL WebAssembly WebGL WebGPU WebRTC IndexedDB LocalStorage SessionStorage ServiceWorker JavaDoc JSDoc SemVer ' +
+    'ConfigMap StatefulSet DaemonSet ReplicaSet CronJob ClusterIP NodePort LoadBalancer IfNotPresent RollingUpdate PersistentVolume ' +
+    'PersistentVolumeClaim ServiceAccount ClusterRole ClusterRoleBinding RoleBinding NetworkPolicy HorizontalPodAutoscaler ' +
+    'CustomResourceDefinition ImagePullBackOff CrashLoopBackOff ErrImagePull OOMKilled ContainerCreating PodInitializing ' +
+    'ReadWriteOnce ReadOnlyMany ReadWriteMany OnFailure ExternalName HelmChart ArrayList HashMap LinkedList HashSet TreeMap TreeSet ' +
+    'LinkedHashMap ConcurrentHashMap StringBuilder StringBuffer InputStream OutputStream FileInputStream FileOutputStream BufferedReader ' +
+    'BufferedWriter PrintWriter PrintStream CompletableFuture ExecutorService ThreadPoolExecutor ScheduledExecutorService ForkJoinPool ' +
+    'AtomicInteger AtomicLong AtomicBoolean AtomicReference CountDownLatch ReentrantLock LocalDate LocalDateTime LocalTime ZonedDateTime ' +
+    'OffsetDateTime BigDecimal BigInteger SimpleDateFormat DateTimeFormatter ObjectMapper JsonNode RestTemplate WebClient HttpClient ' +
+    'HttpRequest HttpResponse ResponseEntity HttpStatus HttpHeaders DataSource JdbcTemplate EntityManager SessionFactory SpringApplication ' +
+    'SpringBootApplication RestController RequestMapping GetMapping PostMapping PutMapping DeleteMapping PathVariable RequestBody ' +
+    'RequestParam ApplicationContext BeanFactory DispatcherServlet FilterChain HttpServletRequest HttpServletResponse KafkaConsumer ' +
+    'KafkaProducer ConsumerRecord ProducerRecord EventEmitter ReadableStream WritableStream TextEncoder TextDecoder ArrayBuffer ' +
+    'Uint8Array Uint16Array Uint32Array Int32Array Float32Array Float64Array SharedArrayBuffer WeakMap WeakSet AbortController ' +
+    'FormData URLSearchParams XMLHttpRequest MutationObserver IntersectionObserver ResizeObserver HTMLElement HTMLDivElement ' +
+    'HTMLInputElement DocumentFragment ShadowRoot CustomEvent KeyboardEvent MouseEvent PointerEvent ClipboardEvent DataTransfer ' +
+    'FileReader BroadcastChannel MessageChannel ImageBitmap OffscreenCanvas DataFrame DictReader DictWriter OrderedDict NamedTuple ' +
+    'TypedDict BaseModel FastAPI APIRouter HTTPException JSONResponse SQLAlchemy AsyncSession AsyncClient IEnumerable IList ' +
+    'IDictionary ILogger IConfiguration IServiceCollection HttpContext ActionResult IActionResult DbContext DbSet CancellationToken ' +
+    'TaskCompletionSource ReactDOM useState useEffect NextResponse NextRequest PascalCase CamelCase SnakeCase KebabCase ' +
+    'GoogleCloud AmazonS3 AzureDevOps AzureAD ActiveDirectory EntraID MicrosoftTeams GoogleDocs GoogleSheets GoogleDrive FireBase Firebase ' +
+    'SuperBase Supabase PlanetScale MongoClient RedisClient JsonParser XmlParser StackTrace NullPointer HelloWorld TodoList MyClass FooBar ' +
+    'UnitTest TestCase ReadMe LastModified ContentType UserAgent AcceptEncoding SetCookie XForwardedFor ApiKey AccessToken RefreshToken'
+  ).split(' ').map((w) => w.toLowerCase()));
+
+  // learned by a content-aware pass: safe to replace everywhere in the paste (and in later pastes)
+  function learnG(ctx, kind, v) {
+    const alias = aliasFor(ctx.table, kind, v);
+    if (alias !== v) { ctx.table.g = ctx.table.g || {}; ctx.table.g[kind + '\u0000' + v] = 1; }
+    return alias;
+  }
+
+  const UPPER_CAMEL = /(?<![\w$.\/@-])([A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+)(?![\w$])/g;
+
+  // Public CamelCase names that this very paste proves are public (segments of public FQNs: org.springframework.web.servlet.DispatcherServlet)
+  function publicNamesIn(text, ctx) {
+    const out = new Set();
+    const re = /\b((?:[a-z_][\w$]*\.){2,}[\w$.]*)/g;
+    let m;
+    while ((m = re.exec(text))) {
+      const fq = m[1];
+      if (!ctx.isPublicName(fq)) continue;
+      for (const seg of fq.split('.')) if (/^[A-Z]/.test(seg)) out.add(seg.toLowerCase().replace(/\$.*/, ''));
+    }
+    return out;
+  }
+
+  // 1) Unfamiliar proprietary names: SilverOrchidPartner, VegaPrime, AzureFawn …
+  // Words that start sentences or are ordinary capitalised English — never a name on their own.
+  const TITLE_STOP = new Set(('the a an this that these those our your their my his her its we you they i it he she ' +
+    'monday tuesday wednesday thursday friday saturday sunday january february march april may june july august september ' +
+    'october november december q1 q2 q3 q4 hi hey hello dear thanks thank please team all new old first last next ' +
+    'from to cc bcc subject re fw fwd sent date error warning info debug note todo fixme confidential internal').split(' '));
+  const ORG_SUFFIX = 'Bank|Capital|Holdings|Group|Labs|Inc|Ltd|LLC|LLP|PLC|Corp|Corporation|Company|GmbH|AG|SA|SAS|BV|NV|Pty|' +
+    'Partners|Ventures|Technologies|Technology|Systems|Solutions|Insurance|Assurance|Pharma|Pharmaceuticals|Health|Healthcare|' +
+    'Hospital|Clinic|Motors|Airlines|Airways|Logistics|Retail|Energy|Foods|Media|Studios|Industries|Enterprises|Networks|Telecom|' +
+    'Bancorp|Financial|Finance|Securities|Investments|Trust|Credit|Mutual|Realty|Properties|Foundation|University|College|Agency|Ministry';
+  const CUE_AFTER = 'account|accounts|client|clients|customer|customers|partner|partners|deal|contract|renewal|project|program|' +
+    'programme|tenant|merchant|vendor|supplier|portfolio|engagement|rollout|launch|integration|acquisition|merger|pilot|POC|RFP|bid';
+  const TC = "[A-Z][a-zA-Z0-9&'-]*[a-zA-Z0-9]";
+  const NAME_BEFORE_CUE = new RegExp('(?<![\\w.@/-])((?:' + TC + ')(?:\\s+' + TC + '){0,2})(?:\'s)?\\s+(?:' + CUE_AFTER + ')\\b', 'g');
+  const NAME_AFTER_CUE = new RegExp('\\b(?:client|customer|partner|merchant|vendor|supplier|tenant|account|project|codename|code name|brand|prospect)\\s+["\'“]?((?:' + TC + ')(?:\\s+' + TC + '){0,2})', 'g');
+  const ORG_NAME = new RegExp('(?<![\\w.@/-])((?:' + TC + '\\s+){1,3}(?:' + ORG_SUFFIX + '))\\b', 'g');
+  const SENDER = /^(?:From|To|Cc|Bcc|Reply-To|Sender|Author|Assignee|Reporter|Owner|Requested by|Approved by)\s*:\s*"?([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+){1,3})"?\s*<[^>\s]+@[^>\s]+>/gm;
+  const NAME_EMAIL = /(?<![\w.])([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+){1,2})\s*<[^>\s]+@[^>\s]+>/g;
+  const MENTION = /(?<=^|[\s(,;])@([a-z][a-z0-9._-]{1,30}[a-z0-9])(?![\w.(\/@-])/gm;
+
+  function learnPhraseNames(text, ctx) {
+    const take = (phrase) => {
+      const words = phrase.trim().split(/\s+/);
+      while (words.length && TITLE_STOP.has(words[0].toLowerCase())) words.shift();
+      if (!words.length) return;
+      const name = words.join(' ');
+      const low = name.toLowerCase();
+      if (name.length < 3 || TITLE_STOP.has(low) || PUBLIC_CAMEL.has(low.replace(/\s+/g, '')) || isKept(name)) return;
+      if (/^(?:Name|Person|Class|AppError|Term|org|service)\d+$/.test(name)) return;
+      learnG(ctx, 'name', name);
+    };
+    let m;
+    for (const re of [NAME_BEFORE_CUE, NAME_AFTER_CUE, ORG_NAME]) { re.lastIndex = 0; while ((m = re.exec(text))) take(m[1]); }
+    for (const re of [SENDER, NAME_EMAIL]) { re.lastIndex = 0; while ((m = re.exec(text))) learnG(ctx, 'person', m[1]); }
+    if (!looksLikeCode(text)) { MENTION.lastIndex = 0; while ((m = MENTION.exec(text))) if (!/^(?:here|channel|everyone|all|team)$/.test(m[1])) learnG(ctx, 'person', '@' + m[1]); }
+  }
+
+  function learnNames(text, ctx) {
+    learnPhraseNames(text, ctx);
+    const pub = publicNamesIn(text, ctx);
+    let m;
+    UPPER_CAMEL.lastIndex = 0;
+    while ((m = UPPER_CAMEL.exec(text))) {
+      const w = m[1];
+      const low = w.toLowerCase();
+      if (PUBLIC_CAMEL.has(low) || pub.has(low) || isKept(w) || PUBLIC_ERRORS.has(w) || COMMON_BARE_EXC.has(w)) continue;
+      if (/^(?:Class|AppError|Term|Person|App)\d*/.test(w) && /\d$/.test(w)) continue;
+      if (/(?:Exception|Error|Fault|Failure)$/.test(w)) continue;                 // handled by the exception rule
+      if (ctx.table.forward['cls\u0000' + w] || ctx.table.forward['exc\u0000' + w]) continue;
+      if (GENERIC_NAMES.has(w)) continue;
+      learnG(ctx, 'name', w);
+    }
+  }
+
+  // 2) Source code: declared identifiers (functions, variables, classes, constants) and string literals
+  const CODE_LINE = /^\s*(?:(?:export\s+)?(?:default\s+)?(?:async\s+)?function\b|(?:export\s+)?(?:const|let|var)\s+\w|def\s+\w|class\s+\w|interface\s+\w|import\s|from\s+\S+\s+import|package\s+[\w.]+;|public\s|private\s|protected\s|return\b|if\s*\(|for\s*\(|while\s*\(|}\s*$|\w+\s*\(.*\)\s*[{;]\s*$|@\w+)/;
+  function looksLikeCode(text) {
+    const lines = text.split('\n').filter((l) => l.trim());
+    if (!lines.length) return false;
+    const hits = lines.filter((l) => CODE_LINE.test(l)).length;
+    return hits >= 2 || (hits >= 1 && lines.length <= 3);
+  }
+  const COMMON_DECL = new Set(('main init run setup teardown handler callback cb fn data result results value values item items config options opts ' +
+    'props state index count i j k n x y z tmp temp req res err error e ctx app router server client customer user users order orders ' +
+    'response request input output args kwargs self this that name id key keys list map set obj object array str string num number ' +
+    'toString equals hashCode compareTo render constructor componentDidMount componentWillUnmount doGet doPost handle execute apply ' +
+    'test it describe beforeEach afterEach getInstance builder build get set put post delete update create read write open close start ' +
+    'stop logger log LOG').split(' '));
+  const BIZ_ROOT = /rate|discount|margin|threshold|payout|royalt|price|pricing|rebate|commission|fee|markup|bonus|salar|revenue|profit|cost|budget|quota|chargeback|premium|refund|penalt|interest|tax|invoice|valuation|forecast|formula|multiplier|coefficient|uplift|surcharge|tariff/i;
+  const CODE_BIZ_WORD = /client|customer|partner|tenant|merchant|vendor|supplier|account|contract|deal|secret|private|confidential|internal|quiet|hidden|special|vip|whale|tier|plan|policy|rule|legal|compliance|fraud|risk|payroll|salary|employee/i;
+  const ALIAS_TOKEN = /\b(?:Name|org|service|bucket|table|col|var|func|Class|AppError|user|machine|project|Person)\d+\b|\bhost\d+\.example\.internal\b|\bmail\d+@example\.com\b|\bID-\d+\b/;
+  const parts = (id) => id.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(/[\s_\-]+/).filter(Boolean);
+
+  function learnCode(text, ctx) {
+    if (!looksLikeCode(text)) return;
+    const decl = [
+      [/\b(?:async\s+)?function\s*\*?\s+([A-Za-z_$][\w$]*)/g, 'func'],
+      [/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*[:=]/g, 'var'],
+      [/^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)/gm, 'func'],
+      [/\bfunc\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)/g, 'func'],
+      [/\b(?:class|interface|enum|struct|trait|record)\s+([A-Za-z_]\w*)/g, 'cls'],
+      [/\btype\s+([A-Z]\w*)\s*(?:=|struct|interface)/g, 'cls'],
+      [/\b(?:public|private|protected|internal)\s+(?:static\s+|final\s+|async\s+|override\s+|virtual\s+|abstract\s+)*[\w<>\[\],.?]+\s+([a-z_]\w*)\s*\(/g, 'func'],
+      [/^\s*([a-z_][\w$]*)\s*[:=]\s*(?:async\s+)?(?:\([^)]*\)\s*=>|function\b|lambda\b)/gm, 'func'],
+      [/^\s*([A-Z][A-Z0-9_]{3,})\s*[:=]/gm, 'var'],
+    ];
+    for (const [re, kind] of decl) {
+      let m;
+      re.lastIndex = 0;
+      while ((m = re.exec(text))) {
+        const id = m[1];
+        if (COMMON_DECL.has(id) || GENERIC_NAMES.has(id) || isKept(id) || id.length < 4) continue;
+        const p = parts(id);
+        if (kind === 'var' && /^[A-Z0-9_]+$/.test(id) && !BIZ_ROOT.test(id)) continue;   // MAX_RETRIES stays
+        if (p.length < 2 && kind !== 'cls') continue;                                    // single words stay readable
+        if (kind === 'cls' && (PUBLIC_CAMEL.has(id.toLowerCase()) || p.length < 2)) continue;
+        // default: only names that point at the business (computeQuietDiscount, privateClient) — a TodoList stays readable.
+        // codeNames: 'all' renames every declared name.
+        if (ctx.o.codeNames !== 'all' && !BIZ_ROOT.test(id) && !CODE_BIZ_WORD.test(id)) continue;
+        learnG(ctx, kind === 'cls' ? 'name' : kind, id);
+      }
+    }
+    // string literals that look like names: 'BlueOtter', "lotus-platinum", 'Acme Corp'
+    const lit = /(['"`])([^'"`\n]{2,60})\1/g;
+    let m;
+    while ((m = lit.exec(text))) {
+      const v = m[2];
+      const after = text.slice(m.index + m[0].length, m.index + m[0].length + 3);
+      if (/^\s*:/.test(after)) continue;                                                  // object keys
+      if (/(?:className|class|id|type|rel|role|href|src|for|htmlFor|variant|size|color|key|ref|data-[\w-]+|aria-[\w-]+)\s*=\s*\{?\s*$/.test(text.slice(Math.max(0, m.index - 24), m.index))) continue;
+      if (/^(?:\.{0,2}\/|@|https?:|[a-z]+:\/\/)/.test(v) || /^(?:react|vue|svelte|express|lodash|axios|fs|path|os|http|https|crypto|util|events|stream|url|zlib)$/.test(v)) continue;
+      if (/^[\d\s.,:%+\-]*$|%[sdifo]|\{\}|\$\{/.test(v)) continue;
+      if (/^[a-z]+$/.test(v) && v.length < 12) continue;                                  // 'utf8', 'click', 'admin'
+      if (/^(?:[A-Z][a-z0-9]+)(?:[ ][A-Z][a-z0-9]+){0,3}$/.test(v) && !PUBLIC_CAMEL.has(v.toLowerCase().replace(/ /g, '')) && v.length >= 4) learnG(ctx, 'name', v);
+      else if (/^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)+$/.test(v) && !PUBLIC_KEBAB.test(v)) learnG(ctx, 'name', v);
+    }
+  }
+
+  // 3) SQL: tables, private columns, string literals
+  const SQL_KW = new Set(('select from where and or not in is null like ilike between exists join inner left right full outer cross on using ' +
+    'group by order having limit offset fetch first next rows only union all distinct as case when then else end insert into values update set ' +
+    'delete create table view index alter drop add column primary key foreign references constraint default with recursive returning asc desc ' +
+    'count sum avg min max coalesce nullif cast extract date time timestamp interval now current_date current_timestamp lower upper trim ' +
+    'substring length round floor ceil abs true false over partition row_number rank dense_rank lag lead filter within').split(' '));
+  const GENERIC_TABLES = /^(?:users?|orders?|order_items|products?|items?|posts?|comments?|sessions?|events?|logs?|payments?|invoices?|customers?|accounts?|roles?|permissions?|tags?|categories|category|messages?|notifications?|files?|images?|settings?|audit_logs?|migrations?|jobs?|tasks?|teams?|projects?|organizations?|employees?|departments?|addresses|address|carts?|reviews?|likes?|followers?|tokens?|devices?|tickets?|subscriptions?|plans?)$/;
+  const GENERIC_COLUMNS = /^(?:id|uuid|name|title|description|status|state|type|kind|code|key|value|data|count|total|created_at|updated_at|deleted_at|created_by|updated_by|user_id|owner_id|tenant_id|email|version|enabled|active|timestamp|date|time|ts|ref)$/i;
+  function looksLikeSql(text) {
+    return /\b(?:select\b[\s\S]+?\bfrom|insert\s+into|update\s+\w[\w.]*\s+set|delete\s+from|create\s+(?:table|view|index)|alter\s+table|merge\s+into)\b/i.test(text);
+  }
+  function learnSql(text, ctx) {
+    if (!looksLikeSql(text)) return;
+    let m;
+    const tableRe = /\b(?:from|join|into|update|table|exists)\s+((?:[`"\[]?[A-Za-z_][\w$]*[`"\]]?\.)?[`"\[]?[A-Za-z_][\w$]*[`"\]]?)(?!\s*\()/gi;
+    while ((m = tableRe.exec(text))) {
+      const t = m[1].replace(/[`"\[\]]/g, '');
+      const bare = t.split('.').pop().toLowerCase();
+      if (SQL_KW.has(bare) || /^(?:information_schema|pg_\w+|sys|dual|mysql|sqlite_master|performance_schema)/i.test(t)) continue;
+      for (const seg of t.split('.')) {
+        const low = seg.toLowerCase();
+        if (SQL_KW.has(low) || seg.length < 3 || isKept(seg) || /^(?:public|dbo|main)$/.test(low)) continue;
+        if (GENERIC_TABLES.test(low)) continue;
+        learnG(ctx, 'table', seg);
+      }
+    }
+    // identifiers used as columns: snake_case with 2+ parts, not generic
+    const colRe = /(?<![\w.'"])([a-z][a-z0-9]*(?:_[a-z0-9]+)+)(?![\w'"(])/g;
+    while ((m = colRe.exec(text))) {
+      const c = m[1];
+      if (GENERIC_COLUMNS.test(c) || SQL_KW.has(c) || ctx.table.forward['table\u0000' + c] || isKept(c)) continue;
+      learnG(ctx, 'col', c);
+    }
+    const litRe = /'((?:[^'\n]|'')+)'/g;
+    while ((m = litRe.exec(text))) {
+      const v = m[1];
+      if (/^[\d\s.,:%+\-]*$|^\d{4}-\d{2}-\d{2}/.test(v) || v.length < 3 || /^(?:true|false|yes|no|null|active|inactive|pending|enabled|disabled)$/i.test(v)) continue;
+      learnG(ctx, 'str', v);
+    }
+  }
+
+  // 4) YAML / JSON / config values: identifier-like values under any non-structural key
+  const PUBLIC_KEBAB = /^(?:kube-system|kube-public|ingress-nginx|cert-manager|istio-system|monitoring|default|node-exporter|kube-state-metrics|metrics-server|core-dns|coredns|cluster-autoscaler|external-dns|aws-load-balancer-controller|x-forwarded-for|content-type|content-length|cache-control|utf-8|us-ascii|iso-8859-1|read-only|read-write|built-in|non-zero|e-mail|re-try|pre-commit|post-commit|dry-run|no-cache|max-age|keep-alive|same-origin|cross-origin|application-json|text-plain|en-us|en-gb|[a-z]{2}-[a-z]+-\d|us-east-\d|eu-west-\d|ap-south-\d)$/;
+  const STRUCT_KEYS = /^(?:apiVersion|kind|type|protocol|imagePullPolicy|restartPolicy|dnsPolicy|serviceAccountName|mountPath|subPath|path|pathType|accessModes|storage|cpu|memory|operator|effect|scheme|method|encoding|format|level|log_level|lang|locale|language|currency|unit|units|mode|region|zone|timezone|tz|runtimeClassName|schedulerName|priorityClassName|version|tag|ref|branch|shell|runs-on|uses|on|if|env|value_type|content_type|mime|charset|algorithm|cipher|hash|driver|dialect|engine|provider|backend|codec)$/;
+  const IDENT_VALUE = /^(?:[a-z][a-z0-9]*(?:[-_][a-z0-9]+)+|[a-z]+(?:[A-Z][a-z0-9]+)+)$/;
+  function considerValue(key, v, ctx) {
+    v = String(v || '').trim().replace(/^["']|["']$/g, '');
+    if (!v || v.length < 4 || v.length > 80 || isKept(v)) return;
+    const k = String(key || '').replace(/^.*[./]/, '');
+    if (STRUCT_KEYS.test(k)) return;
+    if (/^(?:true|false|yes|no|null|none|~|on|off)$/i.test(v) || /^[\d.]+[a-zA-Z]{0,3}$/.test(v)) return;
+    if (PUBLIC_KEBAB.test(v) || PUBLIC_CAMEL.has(v.toLowerCase())) return;
+    if (IDENT_VALUE.test(v)) learnG(ctx, /^[a-z]+[A-Z]/.test(v) ? 'func' : 'name', v);
+  }
+  function looksLikeYaml(text) {
+    const lines = text.split('\n').filter((l) => l.trim() && !/^\s*#/.test(l));
+    if (lines.length < 3) return false;
+    const kv = lines.filter((l) => /^\s*(?:- )?[\w./-]+:(?:\s|$)/.test(l) || /^\s*- \S/.test(l)).length;
+    return kv / lines.length >= 0.6 && !/^\s*[{[]/.test(text);
+  }
+  function learnStructured(text, ctx) {
+    const t = text.trim();
+    if (/^[{[]/.test(t)) {
+      try {
+        const walk = (v, key) => {
+          if (typeof v === 'string') considerValue(key, v, ctx);
+          else if (Array.isArray(v)) v.forEach((x) => walk(x, key));
+          else if (v && typeof v === 'object') for (const k of Object.keys(v)) walk(v[k], k);
+        };
+        walk(JSON.parse(t), '');
+        return;
+      } catch (e) { /* not a JSON document */ }
+    }
+    if (looksLikeYaml(text)) {
+      let lastKey = '';
+      for (const line of text.split('\n')) {
+        let m;
+        if ((m = /^\s*(?:- )?([\w./-]+):\s+(.+?)\s*$/.exec(line))) { lastKey = m[1]; if (!/^[|>]/.test(m[2])) considerValue(m[1], m[2], ctx); }
+        else if ((m = /^\s*- ([^:{}\[\]]+?)\s*$/.exec(line))) considerValue(lastKey, m[1], ctx);
+      }
+    }
+    // KEY=value config lines (.env, properties)
+    const envRe = /^\s*(?:export\s+)?([A-Za-z_][\w.]*)\s*=\s*["']?([^"'\n#]+?)["']?\s*$/gm;
+    let m;
+    while ((m = envRe.exec(text))) {
+      if (/(?:NAME|PARTNER|CLIENT|CUSTOMER|VENDOR|TENANT|ACCOUNT|COMPANY|ORG|PROJECT|PRODUCT|SERVICE|APP|BUCKET|QUEUE|TOPIC|TABLE|SCHEMA|DATABASE|DB)$/i.test(m[1]) && !/^(?:LOG|NODE|JAVA|PYTHON)_/i.test(m[1])) {
+        const v = m[2].trim();
+        if (v.length >= 3 && !/^[\d.]+$/.test(v) && !/:\/\//.test(v) && !PUBLIC_KEBAB.test(v) && !isKept(v) && !/^(?:true|false|debug|info|warn|error|production|development|test|staging)$/i.test(v)) learnG(ctx, 'name', v);
+      }
+    }
+  }
+
+  // 5) Deploy / CI names and container images: "Deploying helios-risk-engine:2.3.1", registry.corp/team/app:tag
+  const PUBLIC_REGISTRY = /^(?:docker\.io|index\.docker\.io|registry-1\.docker\.io|gcr\.io|ghcr\.io|quay\.io|public\.ecr\.aws|mcr\.microsoft\.com|registry\.k8s\.io|k8s\.gcr\.io|cgr\.dev|docker\.elastic\.co|nvcr\.io)$/;
+  const PUBLIC_IMAGES = /^(?:nginx|redis|postgres|mysql|mariadb|mongo|node|python|golang|openjdk|eclipse-temurin|amazoncorretto|ubuntu|debian|alpine|busybox|centos|fedora|httpd|traefik|envoy|consul|vault|grafana|prometheus|alertmanager|elasticsearch|kibana|logstash|kafka|zookeeper|rabbitmq|memcached|minio|jenkins|sonarqube|nexus|registry|curl|bash|distroless|static|base|scratch|hello-world|kube-proxy|coredns|pause|etcd)$/;
+  function learnDeploy(text, ctx) {
+    let m;
+    const ctxRe = /\b(?:deploy(?:ing|ed|ment)?|rolling out|rollout|roll(?:ing|ed)? back|releas(?:e|ing|ed)|service|app|application|image|chart|helm(?: release)?|pipeline|job|stage|workload|component|microservice|repo(?:sitory)?|build(?:ing)?|pull(?:ing)?|push(?:ing)?|promot(?:e|ing)|scal(?:e|ing)|restart(?:ing)?|upgrad(?:e|ing)|install(?:ing)?)\s+(?:of\s+|to\s+|for\s+)?([a-z][a-z0-9]*(?:-[a-z0-9]+){1,6})(?=[:@\s,.;)]|$)/gi;
+    while ((m = ctxRe.exec(text))) {
+      const v = m[1];
+      if (PUBLIC_KEBAB.test(v) || PUBLIC_IMAGES.test(v) || isKept(v) || /^(?:prod|production|staging|dev|test|qa|uat)(?:-[a-z0-9]+)?$/.test(v)) continue;
+      learnG(ctx, 'service', v);
+    }
+    const imgRe = /\b((?:[a-z0-9-]+\.)+[a-z0-9-]+(?::\d+)?)\/((?:[a-z0-9._-]+\/)*)([a-z0-9._-]+)(?=:[\w.-]+|@sha256:|\s|$)/g;
+    while ((m = imgRe.exec(text))) {
+      const reg = m[1].replace(/:\d+$/, '');
+      if (PUBLIC_REGISTRY.test(reg) || isPublicHost(reg, ctx)) continue;
+      // a private registry is the company's own domain: hide it, and every other host on it
+      if (/\./.test(reg) && !/\.example\.internal$/.test(reg)) {
+        learnG(ctx, 'host', reg.toLowerCase());
+        const d = registrable(reg);
+        if (d && !isPublicHost(d, ctx)) { aliasFor(ctx.table, 'domain', d); if (!ctx.privateDomains.includes(d)) ctx.privateDomains.push(d); }
+      }
+      const repo = m[3];
+      if (!PUBLIC_IMAGES.test(repo) && repo.length >= 4 && !isKept(repo)) learnG(ctx, 'service', repo);
+      for (const seg of m[2].split('/').filter(Boolean)) if (seg.length >= 4 && !GENERIC_WORDS.test(seg) && !isKept(seg)) learnG(ctx, 'service', seg);
+    }
+    // repositories on private git hosts: https://git.corp/claims/rule-pilot.git, git@git.corp:claims/rule-pilot.git
+    const gitRe = /(?:https?:\/\/|git@)([a-z0-9.-]+)[/:]((?:[\w.-]+\/)*)([\w.-]+?)(?:\.git)?(?=[\/'"\s]|$)/gi;
+    while ((m = gitRe.exec(text))) {
+      const host = m[1];
+      if (isPublicHost(host, ctx)) continue;
+      for (const seg of (m[2] + m[3]).split('/').filter(Boolean)) {
+        if (seg.length >= 4 && !GENERIC_WORDS.test(seg) && !isKept(seg) && !/^(?:api|v\d+|www|repos?|scm|git|browse|projects?)$/i.test(seg)) learnG(ctx, 'service', seg);
+      }
+    }
+  }
+
+  // 6) Review findings: things a rule can't decide — business numbers, formulas, money, confidential phrasing.
+  const PHRASE = /\b(?:do not (?:tell|share|disclose|forward|mention)(?:\s+\w+){0,2}|don['’]?t (?:tell|share|forward|mention|disclose)(?:\s+\w+){0,2}|confidential|strictly private|internal only|internal use only|for internal use|not (?:yet )?public|unpublished|unannounced|quietly|under nda|embargo(?:ed)?|before (?:the )?announcement|do not distribute|need[- ]to[- ]know|off the record|keep this (?:between us|quiet))\b/gi;
+  const MONEY = /(?:[$€£₹¥]\s?\d[\d,]*(?:\.\d+)?(?:\s?(?:k|m|mn|b|bn|million|billion))?\b|\b\d[\d,]*(?:\.\d+)?\s?(?:usd|eur|gbp|inr|million|billion|crore|lakh)\b)/gi;
+  const PERCENT = /\b\d+(?:\.\d+)?\s?(?:%|percent\b|pct\b|bps\b|basis points\b)/gi;
+  const FORMULA = /\b[a-z_][\w.]*\s*[*\/]\s*\d+(?:\.\d+)?\b|\b\d+(?:\.\d+)?\s*[*\/]\s*[a-z_][\w.]*\b/gi;
+  const DECIMAL = /(?<![\w.:\/-])-?\d*\.\d+(?![\w.:%\/-])/g;
+  function findReview(outText, srcText, gate) {
+    const out = outText.split('\n');
+    const src = srcText.split('\n');
+    const sameShape = out.length === src.length;
+    const findings = [];
+    const seen = new Set();
+    const cleanRe = /[\w.-]*example\.internal|<secret[^>]*>|<user>|[\w.+-]+@example\.com/g;
+    const cOut = out.map((l) => l.replace(cleanRe, ' '));
+    const cSrc = sameShape ? src.map((l) => l.replace(cleanRe, ' ')) : null;
+    const CODEISH = /\breturn\b|=>|^\s*(?:if|elif|else|case)\b|[=:]\s*-?\d*\.?\d+\s*[;,]?\s*$/;
+    const ctxFor = (i) => {
+      if (!CODEISH.test(out[i])) return '';
+      const lines = [];
+      for (let k = Math.max(0, i - 3); k <= Math.min(out.length - 1, i + 1); k++) { lines.push(cOut[k]); if (cSrc) lines.push(cSrc[k]); }
+      return lines.join(' ');
+    };
+    // the same finding on many lines (a repeated log line) is one entry with a count
+    const byText = new Map();
+    let lineFound = [];
+    const add = (kind, text, i, reason) => {
+      if (/^(?:value|str|var|func|col|table|name)\d+$/i.test(text)) return;
+      lineFound.push(text);
+      const key = kind + '|' + text;
+      const prev = byText.get(key);
+      if (prev) { if (prev.lastLine !== i) { prev.count++; prev.lastLine = i; } return; }
+      const f = { kind, text, line: i + 1, reason, context: out[i].trim().slice(0, 160), count: 1, lastLine: i };
+      byText.set(key, f);
+      findings.push(f);
+    };
+    out.forEach((line, i) => {
+      let m;
+      lineFound = [];
+      PHRASE.lastIndex = 0;
+      while ((m = PHRASE.exec(line))) {
+        // show the whole sentence: the user decides on the decision, not the trigger word
+        const st = Math.max(line.lastIndexOf('. ', m.index) + 1, line.lastIndexOf('; ', m.index) + 1, line.lastIndexOf(': ', m.index) + 1, 0);
+        const ends = ['. ', '; '].map((d) => line.indexOf(d, m.index + m[0].length)).filter((x) => x >= 0);
+        const en = ends.length ? Math.min(...ends) + 1 : line.length;
+        add('phrase', line.slice(st, en).trim().slice(0, 240), i, 'Sounds confidential');
+      }
+      if (!gate) return;                                  // a plain question with nothing private: phrases only
+      MONEY.lastIndex = 0;
+      while ((m = MONEY.exec(line))) add('money', m[0], i, 'Money amount');
+      const biz = BIZ_ROOT.test(cOut[i] + ' ' + (cSrc ? cSrc[i] : '')) || BIZ_ROOT.test(ctxFor(i));
+      const nextToHidden = ALIAS_TOKEN.test(line);
+      if (!biz && !nextToHidden) return;
+      PERCENT.lastIndex = 0;
+      while ((m = PERCENT.exec(line))) add('number', m[0], i, biz ? 'Percentage in a business context' : 'Percentage next to a hidden name');
+      if (!biz) return;
+      FORMULA.lastIndex = 0;
+      while ((m = FORMULA.exec(line))) add('formula', m[0], i, 'Looks like a pricing or business formula');
+      if (!biz) return;
+      DECIMAL.lastIndex = 0;
+      while ((m = DECIMAL.exec(line))) {
+        if (lineFound.some((t) => t.includes(m[0]))) continue;
+        add('number', m[0], i, 'Number next to a business term');
+      }
+    });
+    return findings;
+  }
+
+  // 7) User-chosen values to hide (from "Hide" on a review finding): reversible, type-preserving where possible
+  function hideChosenValues(text, values, ctx) {
+    let t = text;
+    const vals = [...new Set((values || []).map(String).filter((v) => v && v.length >= 1))].sort((a, b) => b.length - a.length);
+    for (const v of vals) {
+      const kind = /^-?\d+$/.test(v) ? 'int' : /^-?\d*\.\d+$/.test(v) ? 'dec' : 'val';
+      const alias = aliasFor(ctx.table, kind, v);
+      t = t.replace(new RegExp('(?<![\\w.])' + escapeRe(v) + '(?![\\w])', 'g'), alias);
+    }
+    return t;
+  }
+
+  // What kind of content is this? Used for the "technical content only" scope.
+  function detectKinds(text) {
+    const k = [];
+    if (/^\s+at\s|Traceback \(most recent call last\)|^\s*File ".+", line \d+/m.test(text)) k.push('trace');
+    if (looksLikeSql(text)) k.push('sql');
+    if (looksLikeCode(text)) k.push('code');
+    const t = text.trim();
+    if (/^[{[]/.test(t)) { try { JSON.parse(t); k.push('json'); } catch (e) { /* no */ } }
+    if (looksLikeYaml(text)) k.push('yaml');
+    if (/^\s*(?:export\s+)?[A-Z_][A-Z0-9_]*=\S/m.test(text)) k.push('config');
+    if (text.split('\n').some((l) => PROMPT_RES.some((re) => re.test(l)))) k.push('terminal');
+    if (/\d{2}:\d{2}:\d{2}/.test(text) && /\b(?:TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\b/.test(text)) k.push('log');
+    if (!k.length) k.push('prose');
+    return k;
   }
 
   /** Clean a short string (e.g. a file name) using only names already learned in the alias table. */
@@ -1520,7 +2021,7 @@ footer a{color:var(--ink)}
     return { text: t, count };
   }
 
-  return { strip, restore, looksLikeLog, containsKnown, hideNames, createAliasTable, aliasCount, DEFAULTS, version: '0.4.1' };
+  return { strip, restore, looksLikeLog, containsKnown, hideNames, detectKinds, createAliasTable, aliasCount, DEFAULTS, version: '0.5.0' };
 });
 </script>
 <script>

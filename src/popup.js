@@ -1,7 +1,7 @@
 (() => {
   const S = self.StackStrip;
   const DEFAULTS = {
-    enabled: true, mode: 'ask', restoreOnCopy: true, hidePrivateSource: true, aliasStrings: true, hideIdentity: true, trim: false, keepVisible: [], scope: 'all', contextLines: 4,
+    enabled: true, mode: 'ask', restoreOnCopy: true, hidePrivateSource: true, aliasStrings: true, hideIdentity: true, trim: false, keepVisible: [], scope: 'all', codeNames: 'business', skipMediaAck: false, contextLines: 4,
     privatePrefixes: [], privateTerms: [], privateDomains: [],
   };
   const $ = (id) => document.getElementById(id);
@@ -18,6 +18,8 @@
     document.querySelector(`input[name=scope][value=${settings.scope}]`).checked = true;
     for (const k of ['restoreOnCopy', 'hidePrivateSource', 'aliasStrings', 'hideIdentity', 'trim']) $(k).checked = settings[k];
     for (const k of ['privateTerms', 'privatePrefixes', 'privateDomains', 'keepVisible']) $(k).value = settings[k].join(', ');
+    $('codeAll').checked = settings.codeNames === 'all';
+    $('askMedia').checked = !settings.skipMediaAck;
     showAliases();
   }
 
@@ -35,6 +37,8 @@
   for (const k of ['restoreOnCopy', 'hidePrivateSource', 'aliasStrings', 'hideIdentity', 'trim']) $(k).onchange = (e) => { settings[k] = e.target.checked; save(); };
   for (const k of ['privateTerms', 'privatePrefixes', 'privateDomains', 'keepVisible']) $(k).onchange = (e) => { settings[k] = list(e.target.value); save(); };
 
+  $('codeAll').onchange = (e) => { settings.codeNames = e.target.checked ? 'all' : 'business'; save(); };
+  $('askMedia').onchange = (e) => { settings.skipMediaAck = !e.target.checked; save(); };
   $('clear').onclick = async () => {
     table = S.createAliasTable();
     await chrome.storage.local.set({ aliasTable: table });

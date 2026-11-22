@@ -14,6 +14,8 @@
     hideIdentity: true,
     scope: 'all',           // 'all' = check every paste and file, 'logs' = only logs / traces / terminal output
     trim: false,            // opt-in: cut long logs down to the failure
+    skipMediaAck: false,    // don't ask about images / PDFs that can't be checked
+    codeNames: 'business',  // 'business' = rename declared code names that point at the business; 'all' = every one
     keepVisible: [],        // names / libraries the user chose never to hide
     contextLines: 4,
     privatePrefixes: [],
@@ -46,6 +48,7 @@
     privatePrefixes: settings.privatePrefixes,
     privateTerms: settings.privateTerms,
     privateDomains: settings.privateDomains,
+    codeNames: settings.codeNames,
   });
 
   // ---- paste interception ---------------------------------------------------
@@ -98,7 +101,7 @@
     let detected = false, result;
     try {
       if (!raw || !raw.trim()) return;
-      if (settings.scope === 'logs' && !S.looksLikeLog(raw, table)) return;
+      if (settings.scope === 'logs' && S.detectKinds(raw).every((k) => k === 'prose') && !S.containsKnown(raw, table)) return;
       detected = true;
       result = S.strip(raw, engineOpts(), table);
     } catch (err) {
@@ -109,7 +112,7 @@
       toast('StackStrip hit an error, so this paste was blocked. Refresh the page and paste again.' + (alive() ? '' : ' (The extension was updated — a refresh is needed.)'));
       return;
     }
-    if (!result.changed) return;
+    if (!result.changed && !result.needsReview) return;
 
     // Nothing reaches the page until the user decides.
     e.preventDefault();
@@ -118,7 +121,7 @@
 
     if (!alive()) toast('StackStrip was updated — refresh this page so the new version runs.');
     const saved = saveSelection(target);
-    if (settings.mode === 'auto') {
+    if (settings.mode === 'auto' && !result.needsReview) {     // anything that needs review always gets the preview
       insertText(target, saved, result.text);
       toast(summaryLine(result.report) + ' — pasted stripped');
       return;
@@ -133,7 +136,7 @@
 
   // ---- restore on copy ------------------------------------------------------
   window.addEventListener('copy', (e) => {
-    if (!settings.enabled || !settings.restoreOnCopy) return;
+    if (!e.isTrusted || !settings.enabled || !settings.restoreOnCopy) return;   // only a real ⌘C, never a scripted copy
     const sel = String(window.getSelection() || '');
     if (!sel) return;
     const r = S.restore(sel, table);
@@ -144,10 +147,21 @@
   }, true);
 
   // Copy buttons in the chat UI use navigator.clipboard — main-world.js tells us what was copied.
+  // Page scripts can post the same message, so it is only honoured right after a *trusted* user action
+  // (a real click or key press, which page scripts cannot fake), once per action, and never answered:
+  // the restored text goes straight to the clipboard from this isolated world, never back to the page.
+  let lastGesture = 0, lastUsedGesture = -1;
+  for (const type of ['pointerdown', 'mousedown', 'keydown', 'touchstart']) {
+    window.addEventListener(type, (ev) => { if (ev.isTrusted) lastGesture = Date.now(); }, true);
+  }
+  const recentGesture = () => Date.now() - lastGesture < 1500 || !!(navigator.userActivation && navigator.userActivation.isActive && Date.now() - lastGesture < 5000);
   window.addEventListener('message', (e) => {
-    if (e.source !== window || !e.data || e.data.__stackstrip !== 'copied') return;
+    if (e.source !== window || e.origin !== location.origin || !e.data || e.data.__stackstrip !== 'copied') return;
     if (!settings.enabled || !settings.restoreOnCopy) return;
-    const r = S.restore(String(e.data.text || ''), table);
+    if (typeof e.data.text !== 'string' || !e.data.text || e.data.text.length > 500000) return;
+    if (!recentGesture() || lastUsedGesture === lastGesture) return;   // forged, or a second message for the same click
+    lastUsedGesture = lastGesture;
+    const r = S.restore(e.data.text, table);
     if (!r.count) return;
     navigator.clipboard.writeText(r.text).then(
       () => toast('Restored ' + r.count + ' real name' + (r.count === 1 ? '' : 's') + ' in the copied answer'),
@@ -213,12 +227,15 @@
         </header>
         <div class="files" ${isFiles ? '' : 'hidden'}></div>
         <div class="stats"></div>
+        <div class="state"></div>
         <div class="tabs" role="tablist">
           <button class="tab on" data-t="out" role="tab">What the AI will see</button>
           <button class="tab" data-t="hidden" role="tab">What was hidden <span class="n"></span></button>
+          <button class="tab warn" data-t="review" role="tab" hidden>Review <span class="n"></span></button>
         </div>
         <pre class="out" tabindex="0"></pre>
         <div class="hidden" hidden></div>
+        <div class="review" hidden></div>
         <div class="hide">
           <input type="text" placeholder="Still see something private? Type a word to hide it everywhere (e.g. your company name)" />
           <button class="ghost add">Hide word</button>
@@ -238,7 +255,8 @@
 
     const $ = (s) => wrap.querySelector(s);
     let idx = 0;
-    const restripAll = () => { for (const d of docs) d.result = S.strip(d.raw, engineOpts(), table); saveTable(); };
+    const chosen = [];                         // values the user chose to hide from the Review tab (this preview only)
+    const restripAll = () => { for (const d of docs) d.result = S.strip(d.raw, Object.assign(engineOpts(), { hideValues: chosen }), table); saveTable(); };
 
     function render() {
       if (isFiles) {
@@ -266,6 +284,19 @@
       $('.hidden').innerHTML = hiddenList(rep);
       const total = docs.reduce((a, d) => a + d.result.report.replacements.length + d.result.report.secrets, 0);
       $('.tab[data-t=hidden] .n').textContent = '(' + (rep.replacements.length + rep.secrets) + (isFiles && docs.length > 1 ? ' · ' + total + ' in all files' : '') + ')';
+      const review = rep.review || [];
+      const rt = $('.tab[data-t=review]');
+      rt.hidden = !review.length;
+      rt.querySelector('.n').textContent = '(' + review.length + ')';
+      if (!review.length && !$('.review').hidden) { $('.review').hidden = true; $('.out').hidden = false; wrap.querySelectorAll('.tab').forEach((x) => x.classList.toggle('on', x.dataset.t === 'out')); }
+      $('.review').innerHTML = reviewList(review);
+      const st = rep.state || 'protected';
+      $('.state').className = 'state is-' + st;
+      $('.state').innerHTML = st === 'review'
+        ? '<b>⚠ Review required.</b> ' + review.length + ' thing' + (review.length === 1 ? '' : 's') + ' StackStrip can\'t judge — business numbers, formulas or confidential wording. <a href="#" class="go-review">Check them</a>'
+        : '<b>✓ Known patterns hidden.</b> Names, hosts, secrets and company code it recognises are replaced. It can\'t guarantee nothing else is private — glance at the text before you send.';
+      const gr = $('.state .go-review');
+      if (gr) gr.onclick = (ev) => { ev.preventDefault(); rt.click(); };
     }
     render();
 
@@ -281,7 +312,18 @@
       wrap.querySelectorAll('.tab').forEach((x) => x.classList.toggle('on', x === b));
       $('.out').hidden = b.dataset.t !== 'out';
       $('.hidden').hidden = b.dataset.t !== 'hidden';
+      $('.review').hidden = b.dataset.t !== 'review';
     }));
+    $('.review').addEventListener('click', (ev) => {
+      const b = ev.target.closest && ev.target.closest('button');
+      if (!b) return;
+      const cur = docs[idx].result.report.review || [];
+      const pick = b.classList.contains('all') ? cur.map((f) => f.text) : [b.dataset.v];
+      for (const v of pick) if (v && !chosen.includes(v)) chosen.push(v);
+      restripAll();
+      render();
+      toast(pick.length === 1 ? 'Hidden in this paste — copy-back will put it back' : 'Hid ' + pick.length + ' items in this paste');
+    });
     $('.hidden').addEventListener('click', (ev) => {
       const b = ev.target.closest && ev.target.closest('button.keep');
       if (!b) return;
@@ -324,13 +366,26 @@
   const OURS = new WeakSet();                 // events we re-dispatch ourselves
   const MAX_FILE = 25 * 1024 * 1024;
   const TEXT_EXT = /\.(?:log|logs|txt|text|out|err|stdout|stderr|trace|stack|dump|json|jsonl|ndjson|ya?ml|toml|ini|cfg|conf|config|cnf|properties|props|env|xml|csv|tsv|md|har|sql|sh|bash|zsh|ps1|bat|py|js|mjs|cjs|ts|tsx|jsx|java|kt|kts|scala|groovy|gradle|go|rs|rb|php|cs|fs|vb|c|cc|cpp|h|hpp|swift|m|dart|ex|exs|tf|tfvars|hcl|diff|patch|pem|crt|key)$/i;
-  const NOT_TEXT = /\.(?:png|jpe?g|gif|webp|heic|bmp|tiff?|svg|ico|pdf|docx?|xlsx?|pptx?|key|numbers|pages|zip|gz|tgz|bz2|xz|7z|rar|tar|jar|war|mp4|mov|mp3|wav|webm|exe|dmg|pkg|bin|so|dylib|dll|class|wasm|psd|sketch|fig)$/i;
-  const maybeText = (f) => f && f.size > 0 && f.size <= MAX_FILE && !NOT_TEXT.test(f.name) && !/^(?:image|audio|video|font)\//.test(f.type || '') &&
+  const NOT_TEXT = /\.(?:png|jpe?g|gif|webp|heic|bmp|tiff?|svg|ico|pdf|docx?|xlsx?|pptx?|numbers|pages|zip|gz|tgz|bz2|xz|7z|rar|tar|jar|war|mp4|mov|mp3|wav|webm|exe|dmg|pkg|bin|so|dylib|dll|class|wasm|psd|sketch|fig|p12|pfx|jks|keystore|kdbx|der|cer)$/i;
+  const CREDENTIAL = /\.(?:pem|key|p12|pfx|jks|keystore|kdbx|ppk|asc|gpg|ovpn|der|cer|crt)$|(?:^|\/)(?:id_(?:rsa|dsa|ecdsa|ed25519)|\.?env(?:\.[\w-]+)?|credentials|secrets?(?:\.[\w-]+)?|\.npmrc|\.pypirc|\.netrc|kubeconfig)$/i;
+  const MEDIA = /^(?:image|audio|video)\/|\.(?:png|jpe?g|gif|webp|heic|bmp|tiff?|svg|ico|pdf|mp4|mov|mp3|wav|webm)$/i;
+  // Why a file can't be inspected (shown to the user, who must decide).
+  function whyUninspected(f) {
+    if (f.size > MAX_FILE && !NOT_TEXT.test(f.name)) return 'too large to check (' + (f.size / 1048576).toFixed(0) + ' MB, limit ' + (MAX_FILE / 1048576) + ' MB)';
+    if (CREDENTIAL.test(f.name) && NOT_TEXT.test(f.name)) return 'looks like a key or credential store — can\'t be read';
+    if (/^image\//.test(f.type) || /\.(?:png|jpe?g|gif|webp|heic|bmp|tiff?|svg|ico)$/i.test(f.name)) return 'image — text inside it can\'t be checked';
+    if (/\.pdf$/i.test(f.name)) return 'PDF — can\'t be checked';
+    if (/\.(?:docx?|xlsx?|pptx?|numbers|pages)$/i.test(f.name)) return 'Office document — can\'t be checked';
+    if (/\.(?:zip|gz|tgz|bz2|xz|7z|rar|tar|jar|war)$/i.test(f.name)) return 'archive — contents can\'t be checked';
+    return 'not a text file — can\'t be checked';
+  }
+  const maybeText = (f) => f && f.size <= MAX_FILE && !NOT_TEXT.test(f.name) && !/^(?:image|audio|video|font)\//.test(f.type || '') &&
     (settings.scope !== 'logs' || TEXT_EXT.test(f.name) || /^text\/|json|xml|yaml|toml|x-sh|javascript|x-log/.test(f.type || '') || (!f.type && !/\.\w{1,5}$/.test(f.name)));
 
   async function isText(f) {
     if (!maybeText(f)) return false;
-    if (TEXT_EXT.test(f.name) && /\.(?:key)$/i.test(f.name) === false) return true;
+    if (f.size === 0) return true;
+    if (TEXT_EXT.test(f.name) && !/\.(?:key|crt|cer)$/i.test(f.name)) return true;
     if (/^application\/(?:pdf|zip|octet-stream|x-|vnd\.)/.test(f.type || '') && !/json|xml|yaml|sql|x-sh|x-httpd/.test(f.type)) return false;
     const head = new Uint8Array(await f.slice(0, 4096).arrayBuffer());
     let bad = 0;
@@ -343,7 +398,7 @@
   async function readFiles(files) {
     const docs = [], other = [];
     for (const f of files) {
-      if (await isText(f)) {
+      if (maybeText(f) && await isText(f)) {
         const raw = await f.text();
         docs.push({ file: f, name: f.name, raw, result: S.strip(raw, engineOpts(), table) });
       } else other.push(f);
@@ -360,14 +415,21 @@
     let docs, other;
     try { ({ docs, other } = await readFiles(files)); }
     catch (err) { console.warn('[StackStrip] reading files failed:', err); toast('StackStrip couldn\'t read that file, so it wasn\'t attached. Try again or use the workspace (⌥⇧S).'); onCancel(); return; }
-    if (!docs.length || !docs.some((d) => d.result.changed)) { deliver(files); return; }
+    // Files StackStrip could not read are never passed on silently.
+    const needAck = other.filter((f) => !(settings.skipMediaAck && MEDIA.test(f.type || f.name) && !CREDENTIAL.test(f.name)));
+    if (needAck.length) {
+      const decided = await askAboutUninspected(needAck);
+      if (decided === 'cancel') { onCancel(); return; }
+      if (decided === 'leave-out') other = other.filter((f) => !needAck.includes(f));
+    }
+    if (!docs.length || !docs.some((d) => d.result.changed || d.result.needsReview)) { deliver(docs.map((d) => d.file).concat(other)); return; }
     const sum = (k) => docs.reduce((a, d) => a + (d.result.report[k] || 0), 0);
     const strippedThen = (ds) => {
       deliver(strippedFiles(ds).concat(other));
       toast('StackStrip: attached ' + ds.length + ' stripped file' + (ds.length === 1 ? '' : 's') + ' · ' + (sum('namesHidden') + sum('identityHidden') + sum('privateFrames')) + ' names hidden' + (sum('secrets') ? ' · ' + sum('secrets') + ' secrets removed' : ''));
     };
-    if (settings.mode === 'auto') { strippedThen(docs); return; }
-    openPreview(docs, { verb: 'Attach', onStripped: strippedThen, onOriginal: () => deliver(files), onCancel });
+    if (settings.mode === 'auto' && !docs.some((d) => d.result.needsReview)) { strippedThen(docs); return; }
+    openPreview(docs, { verb: 'Attach', onStripped: strippedThen, onOriginal: () => deliver(docs.map((d) => d.file).concat(other)), onCancel });
   }
 
   // 1) the attach button: <input type="file">
@@ -375,13 +437,13 @@
   const isFileInput = (el) => el && el.tagName === 'INPUT' && el.type === 'file';
   window.addEventListener('input', (e) => {
     if (OURS.has(e) || !settings.enabled || !isFileInput(e.target)) return;
-    if ([...(e.target.files || [])].some(maybeText)) e.stopImmediatePropagation();   // the matching 'change' does the work
+    if ((e.target.files || []).length) e.stopImmediatePropagation();   // the matching 'change' does the work
   }, true);
   window.addEventListener('change', (e) => {
     const input = e.target;
     if (OURS.has(e) || !settings.enabled || !isFileInput(input) || !input.files || !input.files.length) return;
     const files = [...input.files];
-    if (!files.some(maybeText) || fileInputHeld.has(input)) return;
+    if (fileInputHeld.has(input)) return;
     e.stopImmediatePropagation();
     fileInputHeld.add(input);
     const deliver = (out) => {
@@ -396,7 +458,6 @@
   window.addEventListener('drop', (e) => {
     if (OURS.has(e) || !settings.enabled || !e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files.length) return;
     const files = [...e.dataTransfer.files];
-    if (!files.some(maybeText)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     const target = e.target, x = e.clientX, y = e.clientY;
@@ -411,7 +472,7 @@
   // 3) files pasted with ⌘V (copied in Finder) — returns true when handled
   function handlePastedFiles(e, target) {
     const files = [...((e.clipboardData && e.clipboardData.files) || [])];
-    if (!files.length || !files.some(maybeText)) return false;
+    if (!files.length) return false;
     e.preventDefault();
     e.stopImmediatePropagation();
     const saved = saveSelection(target);
@@ -423,6 +484,56 @@
     };
     handleFiles(files, deliver, () => restoreSelection(target, saved));
     return true;
+  }
+
+  const REVIEW_LABEL = { phrase: 'Sounds confidential', money: 'Money amount', number: 'Business number', formula: 'Formula' };
+  function reviewList(review) {
+    if (!review.length) return '<p class="m">Nothing left to review.</p>';
+    return '<p class="m">StackStrip can\'t tell whether these are confidential. Numbers are left alone by default because the AI often needs them to debug. Hide what shouldn\'t leave — copy-back puts it back in the answer.</p>' +
+      '<table>' + review.map((f) =>
+        '<tr><td class="k1">' + esc(REVIEW_LABEL[f.kind] || f.kind) + '</td><td class="o">' + esc(f.text) +
+        (f.count > 1 ? ' <span class="m">×' + f.count.toLocaleString('en-US') + '</span>' : '') +
+        '<div class="m">' + esc(f.reason || '') + ' · line ' + f.line + '</div></td>' +
+        '<td class="k"><button class="ghost hidev" data-v="' + esc(f.text) + '">Hide</button></td></tr>').join('') + '</table>' +
+      '<div class="rowr"><button class="ghost all">Hide all ' + review.length + '</button></div>';
+  }
+
+  // Files StackStrip can't read are never passed on silently: the user decides, file by file list.
+  function askAboutUninspected(files) {
+    return new Promise((resolve) => {
+      const r = ensureRoot();
+      const wrap = document.createElement('div');
+      wrap.className = 'overlay';
+      wrap.innerHTML = `
+        <div class="card small" role="dialog" aria-label="StackStrip — files it can't check">
+          <header><div class="brand"><span class="logo"></span><b>StackStrip</b></div><button class="x" title="Cancel (Esc)">✕</button></header>
+          <div class="body">
+            <h3>${files.length === 1 ? 'This file' : 'These ' + files.length + ' files'} can't be checked</h3>
+            <p class="m">StackStrip only cleans text. Anything inside ${files.length === 1 ? 'it' : 'them'} will be sent as is — nothing in ${files.length === 1 ? 'it' : 'them'} has been hidden.</p>
+            <ul>${files.map((f) => '<li><b>' + esc(f.name) + '</b> — ' + esc(whyUninspected(f)) + '</li>').join('')}</ul>
+            ${files.some((f) => MEDIA.test(f.type || f.name)) ? '<label class="m"><input type="checkbox" class="skip"> Don\'t ask again for images and PDFs</label>' : ''}
+          </div>
+          <footer><span></span><div class="btns">
+            <button class="ghost cancel">Cancel</button>
+            <button class="ghost leave">Leave ${files.length === 1 ? 'it' : 'them'} out</button>
+            <button class="primary anyway">Attach anyway — not checked</button>
+          </div></footer>
+        </div>`;
+      r.appendChild(wrap);
+      host.style.pointerEvents = 'auto';
+      const done = (v) => {
+        const skip = wrap.querySelector('.skip');
+        if (skip && skip.checked && v === 'attach') { settings.skipMediaAck = true; saveSettings(); }
+        wrap.remove(); host.style.pointerEvents = 'none'; document.removeEventListener('keydown', onKey, true); resolve(v);
+      };
+      const onKey = (ev) => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); done('cancel'); } };
+      document.addEventListener('keydown', onKey, true);
+      wrap.querySelector('.x').onclick = () => done('cancel');
+      wrap.querySelector('.cancel').onclick = () => done('cancel');
+      wrap.querySelector('.leave').onclick = () => done('leave-out');
+      wrap.querySelector('.anyway').onclick = () => done('attach');
+      setTimeout(() => wrap.querySelector('.leave').focus(), 0);
+    });
   }
 
   // What "Don't hide" adds: a whole library for packages/namespaces, the exact name otherwise.
@@ -488,6 +599,26 @@
     .file { background: #151a23; border: 1px solid #232937; color: #c9d1de; border-radius: 8px; padding: 6px 10px; font: 600 12.5px ui-sans-serif, system-ui, sans-serif; cursor: pointer; display: flex; gap: 8px; align-items: center; }
     .file span { color: #7d869a; font-weight: 400; }
     .file.on { border-color: #5eead4; color: #e6e9ef; }
+    .state { margin: 8px 18px 0; padding: 8px 12px; border-radius: 8px; font-size: 12.5px; line-height: 1.45; }
+    .state.is-protected { background: rgba(94,234,212,.08); color: #9fb7b2; border: 1px solid rgba(94,234,212,.18); }
+    .state.is-protected b { color: #5eead4; }
+    .state.is-review { background: rgba(251,191,36,.10); color: #e7d3a4; border: 1px solid rgba(251,191,36,.30); }
+    .state.is-review b { color: #fbbf24; }
+    .state a { color: #fbbf24; }
+    .tab.warn { color: #fbbf24; } .tab.warn[hidden] { display: none; }
+    .review { margin: 10px 18px; padding: 6px 14px 14px; flex: 1; overflow: auto; background: #0a0d12; border: 1px solid #1d222c; border-radius: 10px; min-height: 160px; }
+    .review[hidden] { display: none; }
+    .review table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .review td { padding: 6px; border-bottom: 1px solid #161b24; vertical-align: top; }
+    .review td.k1 { color: #fbbf24; white-space: nowrap; width: 1%; }
+    .review td.o { color: #e6e9ef; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-word; }
+    .review td.k { width: 1%; text-align: right; }
+    .review .m, .card .m { color: #7d869a; font-size: 12px; }
+    .review .rowr { display: flex; justify-content: flex-end; padding-top: 10px; }
+    .card.small { width: min(560px, 100%); }
+    .card .body { padding: 14px 18px; color: #c9d1de; font-size: 13.5px; }
+    .card .body h3 { margin: 0 0 6px; font-size: 15px; color: #e6e9ef; }
+    .card .body ul { margin: 10px 0; padding-left: 18px; } .card .body li { margin: 4px 0; }
     .tabs { display: flex; gap: 4px; padding: 10px 18px 0; }
     .tab { background: none; border: 0; border-bottom: 2px solid transparent; color: #8a93a6; font: 600 13px ui-sans-serif, system-ui, sans-serif; padding: 6px 10px; cursor: pointer; }
     .tab.on { color: #e6e9ef; border-bottom-color: #5eead4; }

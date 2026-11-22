@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Mock chat</title>
+<style>body{font-family:sans-serif;background:#f6f5f1;margin:40px} .pm{min-height:120px;border:1px solid #ccc;background:#fff;padding:10px;white-space:pre-wrap;font-family:monospace;font-size:12px} textarea{width:100%;height:120px} #dz{margin-top:10px;padding:20px;border:2px dashed #999}</style></head>
+<body><h3>Mock AI chat</h3>
+<div id="pm" class="pm" contenteditable="true"></div>
+<p><textarea id="ta"></textarea></p>
+<div id="answer">Fix: in Class1.method1() inside app.mod1, round before calling Class1.method4 — AppError1 is thrown at Class1.java:118.</div>
+<button id="copybtn">Copy answer</button>
+<input type="file" id="attach" multiple>
+<div id="dz">drop files here</div>
+<script>
+  window.pageSawPaste = []; window.attached = []; window.dropped = [];
+  document.getElementById('pm').addEventListener('paste', (e) => {
+    const t = e.clipboardData.getData('text/plain'); window.pageSawPaste.push(t); e.preventDefault();
+    document.getElementById('pm').textContent += t;
+  });
+  document.getElementById('copybtn').onclick = () => navigator.clipboard.writeText(document.getElementById('answer').textContent);
+  // like a chat app: read attached files on change
+  document.getElementById('attach').addEventListener('change', async (e) => {
+    for (const f of e.target.files) window.attached.push({ name: f.name, text: await f.text() });
+  });
+  const dz = document.getElementById('dz');
+  dz.addEventListener('dragover', (e) => e.preventDefault());
+  dz.addEventListener('drop', async (e) => { e.preventDefault(); for (const f of e.dataTransfer.files) window.dropped.push({ name: f.name, text: f.type.startsWith('image') ? '(image)' : await f.text() }); });
+</script></body></html>

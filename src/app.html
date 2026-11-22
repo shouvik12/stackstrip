@@ -48,6 +48,13 @@
 
     <section class="read" id="read" aria-live="polite"></section>
 
+    <div class="state" id="state" hidden></div>
+    <details class="hiddenbox reviewbox" id="reviewBox" open hidden>
+      <summary>Review — StackStrip can't judge these <span id="reviewN"></span></summary>
+      <p class="muted">Business numbers, formulas and confidential wording are left alone by default because the AI may need them. Hide what shouldn't leave; copy-back puts it back.</p>
+      <div id="review"></div>
+    </details>
+
     <details class="hiddenbox" id="hiddenBox" open>
       <summary>What was hidden <span id="hiddenN"></span></summary>
       <div id="hidden"></div>

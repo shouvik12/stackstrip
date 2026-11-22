@@ -5,12 +5,13 @@
   const $ = (id) => document.getElementById(id);
   const DEFAULTS = {
     enabled: true, mode: 'ask', restoreOnCopy: true, hidePrivateSource: true, aliasStrings: true, hideIdentity: true,
-    trim: false, keepVisible: [], contextLines: 4, privatePrefixes: [], privateTerms: [], privateDomains: [],
+    trim: false, keepVisible: [], codeNames: 'business', contextLines: 4, privatePrefixes: [], privateTerms: [], privateDomains: [],
   };
   const TOGGLES = ['hideIdentity', 'hidePrivateSource', 'aliasStrings', 'trim'];
   let settings = Object.assign({}, DEFAULTS);
   let table = S.createAliasTable();
   let lastOut = '', lastBack = '', fileName = '';
+  let chosen = [];                 // values hidden from the Review list (this draft only)
 
   // Drafts live in session storage: kept while Chrome is open, gone when it closes.
   const session = chrome.storage.session;
@@ -35,7 +36,7 @@
   function opts() {
     return {
       hidePrivateSource: settings.hidePrivateSource, aliasStrings: settings.aliasStrings, hideIdentity: settings.hideIdentity,
-      noCut: !settings.trim, keepVisible: settings.keepVisible, contextLines: settings.contextLines, privatePrefixes: settings.privatePrefixes,
+      noCut: !settings.trim, keepVisible: settings.keepVisible, codeNames: settings.codeNames, hideValues: chosen, contextLines: settings.contextLines, privatePrefixes: settings.privatePrefixes,
       privateTerms: settings.privateTerms, privateDomains: settings.privateDomains,
     };
   }
@@ -45,6 +46,7 @@
     if (!raw.trim()) {
       $('out').innerHTML = ''; $('read').innerHTML = ''; $('hint').textContent = ''; $('copy').disabled = true; $('save').disabled = true; lastOut = '';
       $('hidden').innerHTML = ''; $('hiddenN').textContent = '';
+      $('state').hidden = true; $('reviewBox').hidden = true;
       restore(); return;
     }
     const r = S.strip(raw, opts(), table);
@@ -52,6 +54,15 @@
     chrome.storage.local.set({ aliasTable: table }).catch(() => {});
     $('out').innerHTML = hl(r.text, new Map(r.report.replacements.map((x) => [x.alias, x.original])));
     $('hidden').innerHTML = hiddenList(r.report);
+    const review = r.report.review || [];
+    $('state').hidden = false;
+    $('state').className = 'state is-' + (r.report.state || 'protected');
+    $('state').innerHTML = review.length
+      ? '<b>⚠ Review required.</b> ' + pl(review.length, 'thing') + ' StackStrip can\'t judge — see the list below.'
+      : '<b>✓ Known patterns hidden.</b> StackStrip can\'t guarantee nothing else is private — glance at the text before you send it.';
+    $('reviewBox').hidden = !review.length;
+    $('reviewN').textContent = '(' + review.length + ')';
+    $('review').innerHTML = review.map((f) => '<div class="rv"><span class="k1">' + esc({ phrase: 'Sounds confidential', money: 'Money', number: 'Business number', formula: 'Formula' }[f.kind] || f.kind) + '</span><code>' + esc(f.text) + '</code>' + (f.count > 1 ? '<span class="muted">×' + fmt(f.count) + '</span>' : '') + '<span class="muted">line ' + f.line + '</span><button class="ghost hidev" data-v="' + esc(f.text) + '">Hide</button></div>').join('') + (review.length > 1 ? '<div class="rv end"><button class="ghost" id="hideAll">Hide all ' + review.length + '</button></div>' : '');
     $('hiddenN').textContent = '(' + (r.report.replacements.length + r.report.secrets) + ')';
     $('copy').disabled = false;
     $('save').disabled = false;
@@ -124,7 +135,15 @@
   let t = null;
   $('in').addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { run(); saveDraft(); }, 120); });
   $('ans').addEventListener('input', () => { restore(); saveDraft(); });
-  $('clear').onclick = () => { $('in').value = ''; $('ans').value = ''; fileName = ''; run(); saveDraft(); $('in').focus(); };
+  $('clear').onclick = () => { $('in').value = ''; $('ans').value = ''; fileName = ''; chosen = []; run(); saveDraft(); $('in').focus(); };
+  $('review').addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('button');
+    if (!b) return;
+    const vals = b.id === 'hideAll' ? [...$('review').querySelectorAll('button.hidev')].map((x) => x.dataset.v) : [b.dataset.v];
+    for (const v of vals) if (v && !chosen.includes(v)) chosen.push(v);
+    run();
+  });
+  $('in').addEventListener('input', () => { chosen = []; }, true);
 
   // files: open, drop, save
   async function loadFile(f) {

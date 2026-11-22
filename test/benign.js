@@ -1,0 +1,15 @@
+// Public, non-sensitive content. StackStrip should leave it (almost) untouched: every change is a false alarm.
+module.exports = [
+  { id: 'react-component', text: "import React, { useState, useEffect } from 'react';\n\nexport default function TodoList({ items }) {\n  const [filter, setFilter] = useState('all');\n  useEffect(() => { document.title = `Todos (${items.length})`; }, [items]);\n  return <ul className=\"todo-list\">{items.map((i) => <li key={i.id}>{i.text}</li>)}</ul>;\n}" },
+  { id: 'pandas', text: "import pandas as pd\n\ndf = pd.read_csv('data.csv')\ndf['total'] = df['price'] * df['quantity']\nprint(df.groupby('category')['total'].sum().head(10))" },
+  { id: 'nginx-deployment', text: "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: nginx\n  labels:\n    app: nginx\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: nginx\n  template:\n    metadata:\n      labels:\n        app: nginx\n    spec:\n      containers:\n        - name: nginx\n          image: nginx:1.27\n          ports:\n            - containerPort: 80" },
+  { id: 'github-actions', text: "name: CI\non:\n  push:\n    branches: [main]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-node@v4\n        with:\n          node-version: 22\n      - run: npm ci\n      - run: npm test" },
+  { id: 'generic-sql', text: "SELECT u.id, u.email, COUNT(o.id) AS orders\nFROM users u\nLEFT JOIN orders o ON o.user_id = u.id\nWHERE u.created_at > '2024-01-01'\nGROUP BY u.id, u.email\nORDER BY orders DESC\nLIMIT 10;" },
+  { id: 'docker-compose', text: "services:\n  db:\n    image: postgres:16\n    environment:\n      POSTGRES_PASSWORD: example\n  cache:\n    image: redis:7-alpine\n    ports:\n      - \"6379:6379\"" },
+  { id: 'question-js', text: 'Why does JavaScript say "Cannot read properties of undefined" when I call array.map on an API response in Next.js? I use PostgreSQL and TypeScript.' },
+  { id: 'question-k8s', text: 'My pod is stuck in CrashLoopBackOff after I set imagePullPolicy to IfNotPresent. kubectl describe shows OOMKilled. How do I raise the memory limit?' },
+  { id: 'spring-trace', text: 'java.lang.NullPointerException: Cannot invoke "String.length()" because "s" is null\n\tat org.springframework.web.servlet.DispatcherServlet.doDispatch(DispatcherServlet.java:1089)\n\tat org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:140)' },
+  { id: 'python-generic', text: 'Traceback (most recent call last):\n  File "/usr/lib/python3.12/json/decoder.py", line 355, in raw_decode\n    raise JSONDecodeError("Expecting value", s, err.value) from None\njson.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)' },
+  { id: 'math-question', text: 'If a shirt costs 20 and is discounted by 15%, what is the final price? Show the formula price * 0.85.' },
+  { id: 'cover-letter', text: 'Dear Hiring Manager, I am excited to apply for the Product Engineer role. At my last job I led the migration to TypeScript and cut build times by 40%.' },
+];
