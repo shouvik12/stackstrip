@@ -1,0 +1,25 @@
+[2026-11-22 14:10:02,114] INFO uvicorn.access: 10.0.3.44:51234 - "POST /v1/payouts/run HTTP/1.1" 500
+[2026-11-22 14:10:02,101] INFO payouts.engine: starting payout batch for merchant acme_merchant_88213 (region=apac)
+[2026-11-22 14:10:02,105] INFO payouts.engine: using STRIPE_SECRET=sk_live_51Hx9aBcDeFgHiJkLmNoPqRsTuV
+[2026-11-22 14:10:02,110] ERROR payouts.api: payout run failed
+Traceback (most recent call last):
+  File "/srv/acme-payouts/.venv/lib/python3.12/site-packages/starlette/routing.py", line 74, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/srv/acme-payouts/app/api/routes/payouts.py", line 58, in run_payout_batch
+    result = await engine.settle_merchant_batch(merchant_id, fx_policy=FX_POLICY_APAC)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/srv/acme-payouts/app/engine/settlement.py", line 212, in settle_merchant_batch
+    net = self._apply_reserve_holdback(gross, merchant.risk_band)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/srv/acme-payouts/app/engine/settlement.py", line 287, in _apply_reserve_holdback
+    rate = RESERVE_TABLE[risk_band]["holdback_pct"]
+           ~~~~~~~~~~~~~^^^^^^^^^^^
+KeyError: 'band_7_high_chargeback'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/srv/acme-payouts/app/engine/settlement.py", line 215, in settle_merchant_batch
+    raise SettlementError(f"no reserve config for {merchant.risk_band}") from None
+acme_payouts.errors.SettlementError: no reserve config for band_7_high_chargeback

@@ -1,0 +1,21 @@
+{"level":"info","time":"2026-11-22T08:41:10.120Z","msg":"GET /internal/loyalty/points?customerId=88213&token=abcd1234efgh"}
+{"level":"info","time":"2026-11-22T08:41:10.122Z","msg":"fetching ledger from https://ledger.acme-loyalty.com/v3/accounts/88213"}
+/srv/acme-loyalty/dist/services/pointsCalculator.js:144
+    const multiplier = PARTNER_MULTIPLIERS[partner.code].boost;
+                                                         ^
+
+TypeError: Cannot read properties of undefined (reading 'boost')
+    at calculateTierBonus (/srv/acme-loyalty/dist/services/pointsCalculator.js:144:58)
+    at LoyaltyService.redeemPartnerPoints (/srv/acme-loyalty/dist/services/LoyaltyService.js:88:21)
+    at async Promise.all (index 0)
+    at async /srv/acme-loyalty/dist/routes/points.js:31:19
+    at Layer.handle [as handle_request] (/srv/acme-loyalty/node_modules/express/lib/router/layer.js:95:5)
+    at next (/srv/acme-loyalty/node_modules/express/lib/router/route.js:149:13)
+    at Route.dispatch (/srv/acme-loyalty/node_modules/express/lib/router/route.js:119:3)
+    at Layer.handle [as handle_request] (/srv/acme-loyalty/node_modules/express/lib/router/layer.js:95:5)
+    at /srv/acme-loyalty/node_modules/express/lib/router/index.js:284:15
+    at Function.process_params (/srv/acme-loyalty/node_modules/express/lib/router/index.js:346:12)
+    at next (/srv/acme-loyalty/node_modules/express/lib/router/index.js:280:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+Node.js v22.11.0

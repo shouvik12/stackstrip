@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>StackStrip</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <div class="brand"><img src="../icons/icon32.png" alt="" width="20" height="20" /><b>StackStrip</b></div>
+    <label class="switch" title="Turn StackStrip on or off"><input type="checkbox" id="enabled" /><span></span></label>
+  </header>
+  <p class="tag">Debug the failure, not the company's internals.</p>
+
+  <section>
+    <h2>What to check in AI chats</h2>
+    <label class="radio"><input type="radio" name="scope" value="all" /> Check everything I paste or attach</label>
+    <label class="radio"><input type="radio" name="scope" value="logs" /> Only logs, stack traces and terminal output</label>
+    <h2>When something private is found</h2>
+    <label class="radio"><input type="radio" name="mode" value="ask" /> Show me a preview first</label>
+    <label class="radio"><input type="radio" name="mode" value="auto" /> Paste the stripped version right away</label>
+    <label class="check"><input type="checkbox" id="restoreOnCopy" /> Put real names back when I copy the AI's answer</label>
+    <label class="check"><input type="checkbox" id="hidePrivateSource" /> Hide source-code lines from my company's frames</label>
+    <label class="check"><input type="checkbox" id="hideIdentity" /> Hide my username, machine name and project folders</label>
+    <label class="check"><input type="checkbox" id="trim" /> Trim long logs to the failure <span class="muted">(off = keep every line)</span></label>
+    <label class="check"><input type="checkbox" id="aliasStrings" /> Alias 'quoted values' in error messages</label>
+  </section>
+
+  <section>
+    <h2>Always hide these words</h2>
+    <textarea id="privateTerms" rows="2" placeholder="Acme, Globex, Project Falcon"></textarea>
+    <h2>Never hide these <span class="muted">(public libraries or words)</span></h2>
+    <textarea id="keepVisible" rows="2" placeholder="org.bouncycastle., S3Servlet"></textarea>
+    <h2>My company's code starts with</h2>
+    <textarea id="privatePrefixes" rows="2" placeholder="com.acme, acme_, @acme/"></textarea>
+    <h2>My company's domains</h2>
+    <textarea id="privateDomains" rows="1" placeholder="acme.com, acme.io"></textarea>
+    <p class="note">Comma or new-line separated. Everything that isn't a known framework is treated as private anyway — these just make sure.</p>
+  </section>
+
+  <section>
+    <button id="openApp" class="primary big">Open StackStrip workspace ↗</button>
+    <p class="note">A full tab with room for big logs — stays open, keeps what you pasted. For Slack, Jira, email or anywhere else. Shortcut: ⌥⇧S</p>
+  </section>
+
+  <footer>
+    <span id="aliasInfo" class="muted"></span>
+    <button id="clear" class="ghost">Forget aliases</button>
+  </footer>
+
+  <script src="engine.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

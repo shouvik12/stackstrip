@@ -1,0 +1,59 @@
+jdoe@Janes-MacBook-Air Downloads % ls -lrt
+total 41288
+-rw-r--r--@   1 jdoe    staff     402113  2 Nov 10:12 invoice-oct.pdf
+-rw-r--r--@   1 jdoe    staff      88231  5 Nov 18:40 screenshot.png
+-rw-r--r--@   1 jdoe    staff    1203344  9 Nov 21:03 demo-recording.mov
+-rw-r--r--@   1 jdoe    staff      55120 12 Nov 09:15 tool-0.2.0.zip
+-rw-r--r--@   1 jdoe    staff     731002 14 Nov 13:31 banner.png
+-rw-r--r--@   1 jdoe    staff    9464194 19 Nov 23:14 VID-20261119-WA0025.mp4
+-rw-r--r--@   1 jdoe    staff     114233 22 Nov 15:14 stackstrip-source.zip
+jdoe@Janes-MacBook-Air Downloads % unzip -o stackstrip-source.zip
+Archive:  stackstrip-source.zip
+   creating: stackstrip/
+  inflating: stackstrip/manifest.json
+  inflating: stackstrip/README.md
+  inflating: stackstrip/LICENSE
+  inflating: stackstrip/package.json
+  inflating: stackstrip/.gitignore
+   creating: stackstrip/src/
+  inflating: stackstrip/src/engine.js
+  inflating: stackstrip/src/content.js
+  inflating: stackstrip/src/main-world.js
+  inflating: stackstrip/src/popup.html
+  inflating: stackstrip/src/popup.css
+  inflating: stackstrip/src/popup.js
+   creating: stackstrip/icons/
+  inflating: stackstrip/icons/icon16.png
+  inflating: stackstrip/icons/icon32.png
+  inflating: stackstrip/icons/icon48.png
+  inflating: stackstrip/icons/icon128.png
+  inflating: stackstrip/icons/icon512.png
+   creating: stackstrip/demo/
+  inflating: stackstrip/demo/index.html
+  inflating: stackstrip/demo/template.html
+   creating: stackstrip/scripts/
+  inflating: stackstrip/scripts/build-demo.js
+  inflating: stackstrip/scripts/make-big-log.js
+   creating: stackstrip/test/
+  inflating: stackstrip/test/engine.test.js
+   creating: stackstrip/samples/
+  inflating: stackstrip/samples/java-spring.log
+  inflating: stackstrip/samples/node-express.log
+  inflating: stackstrip/samples/terminal.log
+  inflating: stackstrip/samples/big-2000-lines.log
+  inflating: stackstrip/samples/python-fastapi.log
+  inflating: stackstrip/samples/dotnet.log
+jdoe@Janes-MacBook-Air Downloads % cd stackstrip
+jdoe@Janes-MacBook-Air stackstrip % ls -lrt
+total 64
+-rw-r--r--@ 1 jdoe    staff  11357 22 Nov 14:47 LICENSE
+-rw-r--r--@ 1 jdoe    staff   1384 22 Nov 14:52 manifest.json
+-rw-r--r--@ 1 jdoe    staff    612 22 Nov 14:53 package.json
+drwxr-xr-x@ 7 jdoe    staff    224 22 Nov 14:55 src
+drwxr-xr-x@ 7 jdoe    staff    224 22 Nov 14:55 icons
+drwxr-xr-x@ 4 jdoe    staff    128 22 Nov 14:56 demo
+drwxr-xr-x@ 4 jdoe    staff    128 22 Nov 14:56 scripts
+drwxr-xr-x@ 3 jdoe    staff     96 22 Nov 14:57 test
+drwxr-xr-x@ 8 jdoe    staff    256 22 Nov 14:58 samples
+-rw-r--r--@ 1 jdoe    staff   8996 22 Nov 15:12 README.md
+jdoe@Janes-MacBook-Air stackstrip %

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>StackStrip workspace</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <img src="../icons/icon48.png" alt="" width="30" height="30" />
+      <div>
+        <h1>StackStrip</h1>
+        <p>Debug the failure, not the company's internals.</p>
+      </div>
+    </div>
+    <div class="opts">
+      <label><input type="checkbox" id="hideIdentity" /> Hide username &amp; machine</label>
+      <label><input type="checkbox" id="hidePrivateSource" /> Hide company source lines</label>
+      <label><input type="checkbox" id="aliasStrings" /> Alias quoted values</label>
+      <label title="Off: every line is kept, only names are hidden"><input type="checkbox" id="trim" /> Trim long logs to the failure</label>
+    </div>
+  </header>
+
+  <main>
+    <section class="tool">
+      <div class="pane">
+        <div class="ph">
+          <b>Your log</b>
+          <span class="muted">paste a log, stack trace or terminal output — stays on this computer</span>
+          <button class="ghost" id="openFile" title="Or drop a file onto this box">Open file…</button>
+          <input type="file" id="fileIn" hidden />
+          <button class="ghost" id="clear">Clear</button>
+        </div>
+        <textarea id="in" spellcheck="false" placeholder="Paste here (⌘V), open a file, or drop one onto this box…" autofocus></textarea>
+      </div>
+      <div class="pane">
+        <div class="ph">
+          <b>What the AI will see</b>
+          <span class="muted" id="hint"></span>
+          <button class="ghost" id="save" disabled>Save as file</button>
+          <button class="primary" id="copy" disabled>Copy stripped</button>
+        </div>
+        <pre id="out" tabindex="0"></pre>
+      </div>
+    </section>
+
+    <section class="read" id="read" aria-live="polite"></section>
+
+    <details class="hiddenbox" id="hiddenBox" open>
+      <summary>What was hidden <span id="hiddenN"></span></summary>
+      <div id="hidden"></div>
+    </details>
+
+    <section class="hide">
+      <input id="word" type="text" placeholder="Still see something private? Type a word to hide it everywhere — e.g. your company or customer name" />
+      <button class="ghost" id="addWord">Hide word</button>
+      <div id="words" class="words"></div>
+    </section>
+
+    <section class="restore">
+      <h2>Got an answer back? Put your real names back in</h2>
+      <div class="tool small">
+        <div class="pane">
+          <div class="ph"><b>AI answer</b><span class="muted">paste what the AI wrote</span></div>
+          <textarea id="ans" spellcheck="false" placeholder="Paste the AI's answer here…"></textarea>
+        </div>
+        <div class="pane">
+          <div class="ph"><b>With your real names</b><span class="muted" id="rcount"></span><button class="primary" id="copyBack" disabled>Copy</button></div>
+          <pre id="back" tabindex="0"></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span id="aliasInfo"></span>
+    <span>Shortcut: <kbd>⌥</kbd> <kbd>⇧</kbd> <kbd>S</kbd> opens this tab · What you paste here is kept only until you close Chrome.</span>
+  </footer>
+
+  <script src="engine.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

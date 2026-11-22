@@ -1,0 +1,10 @@
+fail: Microsoft.AspNetCore.Server.Kestrel[13]
+      Connection id "0HN8KQ2", Request id "0HN8KQ2:00000002": An unhandled exception was thrown by the application.
+      System.InvalidOperationException: Fare rule FR-2291 has no fallback for cabin 'PremiumFlex'
+         at Contoso.Airline.Pricing.FareRuleEngine.ResolveCabinRule(FareRequest request, CabinClass cabin) in C:\src\Contoso.Airline\Pricing\FareRuleEngine.cs:line 212
+         at Contoso.Airline.Pricing.FareRuleEngine.<>c__DisplayClass5_0.<PriceItinerary>b__1(Segment s) in C:\src\Contoso.Airline\Pricing\FareRuleEngine.cs:line 97
+         at System.Linq.Enumerable.SelectListIterator`2.ToList()
+         at Contoso.Airline.Pricing.FareRuleEngine.PriceItinerary(Itinerary itinerary) in C:\src\Contoso.Airline\Pricing\FareRuleEngine.cs:line 96
+         at Contoso.Airline.Api.Controllers.QuoteController.GetQuote(QuoteRequest req, CancellationToken ct) in C:\src\Contoso.Airline\Api\Controllers\QuoteController.cs:line 44
+         at Microsoft.AspNetCore.Mvc.Infrastructure.ActionMethodExecutor.TaskOfIActionResultExecutor.Execute(ActionContext actionContext, IActionResultTypeMapper mapper, ObjectMethodExecutor executor, Object controller, Object[] arguments)
+         at Microsoft.AspNetCore.Mvc.Infrastructure.ControllerActionInvoker.<InvokeActionMethodAsync>g__Awaited|12_0(ControllerActionInvoker invoker, ValueTask`1 actionResultValueTask)

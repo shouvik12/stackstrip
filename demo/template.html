@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StackStrip playground</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* VOICE: a precise developer tool, calm and confident — the proof is the output, not the copy.
+   IDEA: a log viewer with a redaction strip: raw log in, stripped log out, every replacement marked.
+   PICTURE: the two log panes themselves, side by side, with the live savings readout between them.
+   COLOUR and TYPE: StackStrip brand — graphite ground, teal for aliases, red for secrets; Geist + Geist Mono.
+   LAYOUT: modest title row, tool fills the first screen, restore box and how-it-works below. */
+:root{color-scheme:light dark;
+  --bg:light-dark(#eef0ee,#0d1015);--panel:light-dark(#ffffff,#131820);--well:light-dark(#f7f8f6,#0a0d12);
+  --line:light-dark(#d8dcd8,#232a36);--ink:light-dark(#10141b,#e6e9ef);--mute:light-dark(#5b6472,#8a93a6);
+  --al:light-dark(#0b7d70,#5eead4);--alb:light-dark(#d9f3ee,rgba(94,234,212,.13));
+  --sec:light-dark(#c2362f,#fca5a5);--secb:light-dark(#fbe3e1,rgba(248,113,113,.14));
+  --cut:light-dark(#8a92a0,#6b7487);--btn:light-dark(#10141b,#5eead4);--btnink:light-dark(#ffffff,#062a25)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Geist,ui-sans-serif,system-ui,sans-serif;overflow-x:clip}
+.band{padding:clamp(20px,3vw,40px) max(4vw,16px);max-width:1320px;margin:0 auto}
+.top{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:12px 24px;padding-bottom:8px}
+h1{font-size:clamp(28px,4vw,40px);line-height:1.05;margin:0;font-weight:700;letter-spacing:-.02em;text-wrap:balance;display:flex;align-items:center;gap:12px}
+.mark{width:34px;height:34px;flex:none}
+.sub{margin:6px 0 0;color:var(--mute);font-size:17px}
+.top a{color:var(--ink);font-weight:600;font-size:15px;text-decoration:none;border-bottom:1.5px solid var(--al);padding-bottom:1px;white-space:nowrap}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:18px 0 12px}
+.seg{display:flex;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
+.seg button{border:0;background:none;color:var(--mute);font:500 14px Geist,sans-serif;padding:0 14px;min-height:38px;border-radius:7px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--bg)}
+.opt{display:flex;align-items:center;gap:7px;font-size:14px;color:var(--mute);padding:0 6px;min-height:44px;cursor:pointer}
+.opt input{accent-color:var(--al);width:16px;height:16px}
+.tool{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+.pane{background:var(--panel);border:1px solid var(--line);border-radius:14px;display:flex;flex-direction:column;overflow:hidden}
+.ph{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);font-size:14px;font-weight:600;min-height:52px}
+.ph span{color:var(--mute);font-weight:400;text-align:right}
+textarea,pre.out{margin:0;border:0;background:var(--well);color:var(--ink);font:12.5px/1.6 "Geist Mono",ui-monospace,Menlo,monospace;padding:14px;height:clamp(320px,52vh,560px);width:100%;resize:none;outline:none;overflow:auto;white-space:pre;tab-size:4}
+textarea:focus-visible{box-shadow:inset 0 0 0 2px var(--al)}
+mark{background:var(--alb);color:var(--al);border-radius:3px;padding:0 1px;font:inherit}
+mark.sec{background:var(--secb);color:var(--sec)}mark.cut{background:none;color:var(--cut);font-style:italic}
+.btn{border:0;border-radius:9px;background:var(--btn);color:var(--btnink);font:600 14px Geist,sans-serif;padding:0 16px;min-height:38px;cursor:pointer;white-space:nowrap}
+.btn.ghost{background:none;color:var(--ink);border:1px solid var(--line)}
+.btn:focus-visible,.seg button:focus-visible{outline:2px solid var(--al);outline-offset:2px}
+.read{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-top:14px}
+.read div{background:var(--panel);padding:12px 14px}
+.read b{display:block;font-size:clamp(20px,2.4vw,28px);line-height:1.1;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.read b.big{color:var(--al)}
+.read small{color:var(--mute);font-size:13px}
+.hb{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:4px 14px 10px;margin-top:14px}
+.hb summary{cursor:pointer;font-weight:600;padding:8px 0;min-height:44px;display:flex;align-items:center;gap:6px}.hb summary span{color:var(--al)}
+#hidden{columns:2 380px;column-gap:28px;max-height:380px;overflow:auto}
+#hidden .g{break-inside:avoid;margin-bottom:10px}#hidden h4{margin:6px 0 2px;font-size:13px;color:var(--mute);font-weight:600}
+#hidden table{width:100%;border-collapse:collapse;font:12px/1.5 "Geist Mono",ui-monospace,monospace}
+#hidden td{padding:2px 6px;border-bottom:1px solid var(--line);vertical-align:top}#hidden td.o{word-break:break-all}
+#hidden td.a{color:var(--al);white-space:nowrap}#hidden td.a.s{color:var(--sec)}#hidden td.c{color:var(--mute);text-align:right;width:1%;white-space:nowrap}
+.terms{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.terms input{flex:1 1 260px;font:16px Geist,sans-serif;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:0 12px;min-height:44px;outline:none}
+.terms input:focus-visible{border-color:var(--al)}
+h2{font-size:24px;line-height:1.15;margin:0 0 6px;font-weight:600;letter-spacing:-.01em}
+.lede{color:var(--mute);margin:0 0 14px;max-width:70ch}
+.rest{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+.rest textarea,.rest pre.out{height:150px;white-space:pre-wrap}
+.how{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px;margin-top:6px}
+.how h3{font-size:17px;margin:0 0 4px}.how p{margin:0;color:var(--mute);font-size:15.5px;max-width:60ch}
+.note{color:var(--mute);font-size:13px;margin-top:10px}
+footer{color:var(--mute);font-size:14px;border-top:1px solid var(--line)}
+footer a{color:var(--ink)}
+@media(max-width:600px){.ph .hint{display:none}}
+@media(max-width:860px){.tool,.rest{grid-template-columns:minmax(0,1fr)}.read{grid-template-columns:repeat(2,minmax(0,1fr))}.read div:last-child{grid-column:1/-1}.how{grid-template-columns:minmax(0,1fr)}textarea,pre.out{height:300px}}
+@media(prefers-reduced-motion:no-preference){.read b{transition:color .2s}.flash{animation:fl .5s ease-out}@keyframes fl{from{background:var(--alb)}to{background:var(--panel)}}}
+</style>
+</head>
+<body>
+<main>
+<section class="band">
+  <div class="top">
+    <div>
+      <h1><svg class="mark" viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="8" fill="#0f1218"/><rect x="7" y="8" width="20" height="3.2" rx="1.6" fill="#5eead4"/><rect x="7" y="15.4" width="12" height="3.2" rx="1.6" fill="#f87171"/><rect x="21" y="16.2" width="1.6" height="1.6" rx=".8" fill="#4b5568"/><rect x="24" y="16.2" width="1.6" height="1.6" rx=".8" fill="#4b5568"/><rect x="7" y="22.8" width="17" height="3.2" rx="1.6" fill="#5eead4"/></svg>StackStrip</h1>
+      <p class="sub">Debug the failure, not the company's internals.</p>
+    </div>
+    <a href="https://github.com/shouvik12/stackstrip">Get the Chrome extension ↗</a>
+  </div>
+
+  <div class="bar">
+    <div class="seg" role="group" aria-label="Sample log">
+      <button data-s="java" aria-pressed="true">Java · Spring</button>
+      <button data-s="python" aria-pressed="false">Python · FastAPI</button>
+      <button data-s="node" aria-pressed="false">Node · Express</button>
+      <button data-s="dotnet" aria-pressed="false">.NET</button>
+      <button data-s="terminal" aria-pressed="false">Terminal</button>
+    </div>
+    <label class="opt"><input type="checkbox" id="optSrc" checked> Hide company source lines</label>
+    <label class="opt"><input type="checkbox" id="optId" checked> Hide username &amp; machine</label>
+    <label class="opt"><input type="checkbox" id="optStr" checked> Alias quoted values</label>
+    <label class="opt"><input type="checkbox" id="optTrim"> Trim to the failure</label>
+  </div>
+
+  <div class="tool">
+    <div class="pane">
+      <div class="ph">Your log <span class="hint">paste your own — it never leaves this page</span></div>
+      <textarea id="in" spellcheck="false" aria-label="Raw log"></textarea>
+    </div>
+    <div class="pane">
+      <div class="ph">What the AI sees <button class="btn" id="copy">Copy stripped</button></div>
+      <pre class="out" id="out" tabindex="0" aria-label="Stripped log"></pre>
+    </div>
+  </div>
+
+  <div class="read" id="read" aria-live="polite"></div>
+
+  <details class="hb" open><summary>What was hidden <span id="hn"></span></summary><div id="hidden"></div></details>
+
+  <div class="terms">
+    <input id="terms" placeholder="Words to always hide, comma separated — e.g. Globex, GOLD" aria-label="Words to always hide">
+  </div>
+  <p class="note">Sample logs are made up. Teal = renamed, red = secret removed for good, grey = cut.</p>
+</section>
+
+<section class="band">
+  <h2>Then paste the AI's answer back</h2>
+  <p class="lede">The AI only ever saw <code>Class1.method1</code>. Copy its answer and the extension swaps your real names back in, on your machine. Try it with this sample answer.</p>
+  <div class="rest">
+    <div class="pane">
+      <div class="ph">AI answer <span>uses the aliases</span></div>
+      <textarea id="ans" spellcheck="false" aria-label="AI answer"></textarea>
+    </div>
+    <div class="pane">
+      <div class="ph">What lands in your clipboard <span id="rcount"></span></div>
+      <pre class="out" id="restored" tabindex="0"></pre>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <h2>How it decides</h2>
+  <div class="how">
+    <div><h3>Keep what's public</h3><p>Spring, Tomcat, Express, starlette, the JDK, System.* — framework frames are what the AI needs to diagnose the error, so they stay word for word. Long runs get folded.</p></div>
+    <div><h3>Rename what's yours</h3><p>Your packages, classes, methods, files, hosts, IDs and quoted values become <code>app.mod1.Class1.method1</code>. Line numbers stay. Source lines under your frames are hidden.</p></div>
+    <div><h3>Hide who you are</h3><p>Terminal copies start with <code>you@your-laptop ~/work/project %</code>. Your username, machine name, project folder and git author name become <code>user1@machine1 ~/project1</code> — on that line and every line after it.</p></div>
+    <div><h3>Cut to the failure</h3><p>The root exception, its cause chain and a few log lines before it. Heartbeats collapse, the other thousand lines go. Keys, tokens and passwords are removed and never stored.</p></div>
+  </div>
+</section>
+
+<footer class="band">Runs entirely in your browser — no server, no network calls. Apache-2.0 · <a href="https://github.com/shouvik12/stackstrip">github.com/shouvik12/stackstrip</a></footer>
+</main>
+
+<script>/*__ENGINE__*/</script>
+<script>
+{
+const SAMPLES = /*__SAMPLES__*/;
+const ANSWERS = {
+  java: 'Root cause is the ArithmeticException, not the cap. Class1.method4 calls setScale() without a rounding mode, so the percentage can\'t be represented and app.mod1.AppError1 fires from Class1.method1 (Class1.java:118). Pass RoundingMode.HALF_UP in Class1.method4.',
+  python: 'func3 in app/module2.py indexes the reserve table with a band that has no entry, so it raises KeyError: \'str1\'. Add a default row (or .get with a fallback) in func3 before func2 re-raises it as AppError1.',
+  node: 'func1 in app/file1.js reads .boost from an undefined entry: the partner code isn\'t in the multipliers map. Guard it in func1 and return a multiplier of 1 so Class1.func2 can continue.',
+  terminal: 'Two separate problems. In src/file1.ts line 42 you assign a string where a number is expected — wrap it in Number(). In ~/project1, the ls fails because user1 can\'t read ~/.ssh on machine2: run it without sudo -u user1, or fix the folder\'s owner.',
+  dotnet: 'Class1.method1 in App/File1.cs throws because there\'s no fallback rule for cabin \'str2\'. Add a default cabin rule or return a typed error from Class1.method2 so Class6.method3 can return a 422 instead of a 500.',
+};
+const $ = (id) => document.getElementById(id);
+const S = window.StackStrip;
+let cur = 'java', table = S.createAliasTable();
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const ALIAS = /(?<![\w])(?:app\.mod\d+|App\.Ns\d+|Class\d+|method\d+|AppError\d+|func\d+|str\d+|Term\d+|ID-\d+|user\d+|machine\d+|project\d+|Person\d+|branch\d+|src\/file\d+\.\w+|app\/(?:module|file)\d+\.\w+|App\/File\d+\.\w+|\/app\/path\d+[\w.]*|host\d+\.example\.internal|mail\d+@example\.com|192\.0\.2\.\d+|198\.51\.100\.\d+|00000000-0000-4000-8000-\d{12})(?![\w])|<secret(?::[\w-]+)?>|<user>|<source hidden>|<query>|\.\.\. \d+ framework frames omitted[^\n]*|\[… \d+ log lines? omitted …\]/g;
+function hl(t, orig) {
+  let o = '', last = 0;
+  t.replace(ALIAS, (m, off) => {
+    o += esc(t.slice(last, off));
+    const c = /^<secret|^<user>/.test(m) ? 'sec' : /omitted|<source hidden>|<query>/.test(m) ? 'cut' : '';
+    const tip = orig && orig.get(m) ? ' title="was: ' + esc(orig.get(m)) + '"' : '';
+    o += '<mark' + (c ? ' class="' + c + '"' : '') + tip + '>' + esc(m) + '</mark>';
+    last = off + m.length; return m;
+  });
+  return o + esc(t.slice(last));
+}
+const fmt = (n) => n.toLocaleString('en-US');
+let lastText = '';
+function run() {
+  table = S.createAliasTable();
+  const r = S.strip($('in').value, {
+    hidePrivateSource: $('optSrc').checked, aliasStrings: $('optStr').checked, hideIdentity: $('optId').checked, noCut: !$('optTrim').checked,
+    privateTerms: $('terms').value.split(',').map((x) => x.trim()).filter(Boolean),
+  }, table);
+  lastText = r.text;
+  $('out').innerHTML = hl(r.text, new Map(r.report.replacements.map((x) => [x.alias, x.original]))) || '<span style="color:var(--mute)">Paste a log on the left.</span>';
+  const groups = new Map();
+  for (const x of r.report.replacements) { if (!groups.has(x.label)) groups.set(x.label, []); groups.get(x.label).push(x); }
+  let h = (r.report.secretList || []).length ? '<div class="g"><h4>Secrets — removed for good</h4><table>' + r.report.secretList.map((s) => '<tr><td class="o">' + esc(s.type) + ' <small>' + s.hints.map(esc).join(', ') + '</small></td><td class="a s">&lt;secret&gt;</td><td class="c">×' + s.count + '</td></tr>').join('') + '</table></div>' : '';
+  for (const [label, rows] of groups) h += '<div class="g"><h4>' + esc(label) + (rows.length > 1 ? 's' : '') + '</h4><table>' + rows.map((x) => '<tr><td class="o">' + esc(x.original) + '</td><td class="a">→ ' + esc(x.alias) + '</td><td class="c">×' + x.count + '</td></tr>').join('') + '</table></div>';
+  $('hidden').innerHTML = h || '<p style="color:var(--mute)">Nothing private found.</p>';
+  $('hn').textContent = '(' + (r.report.replacements.length + r.report.secrets) + ')';
+  const p = r.report, saved = p.tokensIn ? Math.max(0, Math.round((1 - p.tokensOut / p.tokensIn) * 100)) : 0;
+  const cells = [[saved + '%', 'fewer tokens (~' + fmt(p.tokensIn) + ' → ~' + fmt(p.tokensOut) + ')', true]].concat([
+    [p.privateFrames, 'company frames renamed'],
+    [Math.max(0, p.publicFrames - p.collapsedFrames), 'framework frames kept'],
+    [p.identityHidden, 'traces of you hidden'],
+    [p.namesHidden, 'names & values renamed'],
+    [p.secrets, 'secrets removed'],
+  ].filter((c) => c[0] > 0).slice(0, 3), [[fmt(p.linesIn) + ' → ' + fmt(p.linesOut), 'lines']]);
+  $('read').innerHTML = cells.map(([v, k, big]) => '<div><b' + (big ? ' class="big"' : '') + '>' + esc(String(v)) + '</b><small>' + esc(k) + '</small></div>').join('');
+  restore();
+}
+function restore() {
+  const r = S.restore($('ans').value, table);
+  $('restored').textContent = r.text;
+  $('rcount').textContent = r.count ? r.count + ' names restored' : '';
+}
+function load(s) {
+  cur = s;
+  document.querySelectorAll('.seg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.s === s)));
+  $('in').value = SAMPLES[s];
+  $('ans').value = ANSWERS[s];
+  run();
+}
+document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => load(b.dataset.s)));
+let t = null;
+const deb = () => { clearTimeout(t); t = setTimeout(run, 120); };
+$('in').addEventListener('input', deb);
+$('terms').addEventListener('input', deb);
+$('optSrc').addEventListener('change', run);
+$('optStr').addEventListener('change', run);
+$('optId').addEventListener('change', run);
+$('optTrim').addEventListener('change', run);
+$('ans').addEventListener('input', restore);
+$('copy').addEventListener('click', () => {
+  navigator.clipboard.writeText(lastText).then(() => { $('copy').textContent = 'Copied ✓'; }, () => { $('copy').textContent = 'Select & copy'; })
+    .finally(() => setTimeout(() => { $('copy').textContent = 'Copy stripped'; }, 1500));
+});
+load('java');
+}
+</script>
+</body>
+</html>

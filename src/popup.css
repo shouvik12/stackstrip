@@ -1,0 +1,29 @@
+* { box-sizing: border-box; }
+body { margin: 0; width: 360px; padding: 14px 16px 12px; background: #0f1218; color: #e6e9ef;
+  font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; align-items: center; justify-content: space-between; }
+.brand { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.tag { margin: 4px 0 10px; color: #8a93a6; font-size: 12px; }
+section { border-top: 1px solid #1d222c; padding: 10px 0 8px; }
+h2 { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: #8a93a6; margin: 6px 0 6px; }
+.muted { color: #7d869a; font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 12px; }
+.note { color: #6b7487; font-size: 11.5px; margin: 6px 0 0; }
+label.radio, label.check { display: flex; gap: 8px; align-items: center; padding: 3px 0; cursor: pointer; color: #c9d1de; }
+input[type=radio], input[type=checkbox] { accent-color: #5eead4; margin: 0; }
+textarea { width: 100%; resize: vertical; background: #0a0d12; color: #e6e9ef; border: 1px solid #232937; border-radius: 8px;
+  padding: 7px 9px; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; outline: none; }
+textarea:focus { border-color: #3b4558; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+footer { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #1d222c; padding-top: 10px; }
+button { border-radius: 8px; padding: 6px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; border: 1px solid transparent; }
+button.primary { background: #5eead4; color: #062a25; }
+button.big { width: 100%; min-height: 40px; font-size: 14px; margin-top: 4px; }
+button.primary:disabled { opacity: .4; cursor: default; }
+button.ghost { background: #151a23; color: #c9d1de; border-color: #262b36; }
+button.ghost:hover { background: #1b2130; }
+.switch { position: relative; width: 36px; height: 20px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch span { position: absolute; inset: 0; background: #262b36; border-radius: 999px; transition: .15s; cursor: pointer; }
+.switch span::before { content: ""; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; background: #8a93a6; border-radius: 50%; transition: .15s; }
+.switch input:checked + span { background: #134e48; }
+.switch input:checked + span::before { transform: translateX(16px); background: #5eead4; }
