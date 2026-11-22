@@ -512,6 +512,14 @@ footer a{color:var(--ink)}
       }
       if ((m = /^\s*(?:Author|Commit|Committer|Signed-off-by|Co-authored-by|Reviewed-by):\s*([^<\n]+?)\s*</.exec(line))) learnName('person', m[1].trim(), ctx);
       if ((m = /\b(?:USER|USERNAME|LOGNAME)=([A-Za-z0-9_][\w.-]*)/.exec(line))) learnName('user', m[1], ctx);
+      // Database / service logins: `for user "svc_payouts"`, `(user svc_payouts)`, `user=svc_payouts`, `Access denied for user 'app'@'10.0.0.4'`
+      const loginRe = /\b(?:for user|role|login|db_?user|user(?:name)?)\s*(?:[=:]\s*|\s+)["'`]?([A-Za-z_][\w.$-]{2,62})["'`]?(?=[\s)"'`@,;]|$)/gi;
+      while ((m = loginRe.exec(line))) {
+        const u = m[1];
+        if (/^(?:is|was|has|not|does|the|and|for|with|from|to|in|on|of|id|name|agent|interface|data|input|error|session|account|profile|mode|space|code|exists?|null|none|undefined|true|false|unknown)$/i.test(u)) continue;
+        if (/^(?:user|host|machine|mail|Name)\d+$/.test(u)) continue;
+        learnName('user', u, ctx);
+      }
       if ((m = /\b(?:HOSTNAME|COMPUTERNAME)=([A-Za-z0-9_][\w.-]*)/.exec(line))) learnName('machine', m[1], ctx);
     }
   }
@@ -2021,7 +2029,7 @@ footer a{color:var(--ink)}
     return { text: t, count };
   }
 
-  return { strip, restore, looksLikeLog, containsKnown, hideNames, detectKinds, createAliasTable, aliasCount, DEFAULTS, version: '0.5.0' };
+  return { strip, restore, looksLikeLog, containsKnown, hideNames, detectKinds, createAliasTable, aliasCount, DEFAULTS, version: '0.5.1' };
 });
 </script>
 <script>

@@ -118,3 +118,15 @@ test('long inputs stay fast (5 MB in under 5 s)', () => {
   assert.ok(Date.now() - t0 < 5000, 'took ' + (Date.now() - t0) + ' ms');
   assert.ok(!r.text.includes('VegaPrime'));
 });
+
+test('database and service logins are hidden, generic ones kept', () => {
+  const r = S.strip([
+    'FATAL: password authentication failed for user "svc_payouts"',
+    'Caused by: java.sql.SQLException: Connection refused: db.internal.novaforge.io:5432 (user svc_ledger)',
+    "ERROR 1045 (28000): Access denied for user 'reporting_ro'@'10.0.4.2'",
+    'FATAL: role "postgres" does not exist',
+  ].join('\n'), {});
+  for (const w of ['svc_payouts', 'svc_ledger', 'reporting_ro']) assert.ok(!r.text.includes(w), w + ' leaked: ' + r.text);
+  assert.ok(r.text.includes('"postgres"'), 'generic postgres user kept');
+  assert.ok(/password authentication failed for user "user\d+"/.test(r.text), r.text);
+});
