@@ -145,3 +145,16 @@ test('pasting already-stripped text changes nothing (no second layer of stand-in
   assert.strictEqual(S.strip(once, {}, S.createAliasTable()).text, once, 'fresh alias table (e.g. another tab or after Forget)');
   assert.ok(S.restore(S.strip(once, {}, t).text, t).text.includes('RulePilot.reconcile'));
 });
+
+test('a table polluted by older versions is cleaned before use', () => {
+  const log = 'java.lang.IllegalStateException: boom\n\tat com.novaforge.claims.RulePilot.reconcile(RulePilot.java:88)';
+  const t = S.createAliasTable();
+  // what 0.5.2 could learn after you pasted already-stripped text
+  t.forward['word\u0000mod1'] = 'org2'; t.kinds.org2 = 'word'; t.counters.word = 2;
+  t.forward['pkg\u0000app.mod1'] = 'app.mod3'; t.kinds['app.mod3'] = 'pkg';
+  const out = S.strip(log, {}, t).text;
+  assert.ok(/at app\.mod\d+\.Class\d+\.method\d+\(/.test(out), out);
+  assert.ok(!/org2|mod3/.test(out), out);
+  assert.ok(!Object.keys(t.forward).some((k) => /\u0000(?:mod1|app\.mod1)$/.test(k)), 'junk entries removed');
+  assert.ok(S.restore(out, t).text.includes('com.novaforge.claims.RulePilot.reconcile'));
+});

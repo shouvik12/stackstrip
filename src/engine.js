@@ -198,9 +198,20 @@
   // StackStrip's own stand-ins (from this table or another) are never aliased again,
   // so pasting already-stripped text is a no-op instead of a second layer of aliases.
   const OWN_ALIAS = /^(?:app\.mod\d+(?:\.[\w$]+)*|Class\d+|method\d+|AppError\d+|func\d+|str\d+|host\d+\.example\.internal|mail\d+@example\.com|192\.0\.2\.\d+|ID-\d+|user\d+|machine\d+|project\d+|Person\d+|org\d+|service\d+|bucket\d+|Name\d+|value\d+|App\.Ns\d+|example\.com\/app\/pkg\d+|\/app\/path\d+(?:\.\w+)?)$/;
+  const OWN_PART = /^(?:mod|org|pkg|path|Ns|host|mail|user|machine|project|Person|service|bucket|Name|value|str|func|method|Class|AppError)\d+$/;
+  // Tables saved by 0.5.2 and earlier could hold entries learned from StackStrip's own output
+  // (e.g. word "mod1" -> "org2"). Drop them so they can't rewrite fresh stand-ins.
+  function dropOwnAliases(table) {
+    if (!table || !table.forward || table.cleaned === 1) return;
+    for (const key of Object.keys(table.forward)) {
+      const original = key.slice(key.indexOf('\u0000') + 1);
+      if (OWN_ALIAS.test(original) || OWN_PART.test(original)) { delete table.kinds[table.forward[key]]; delete table.forward[key]; table.ver = (table.ver || 0) + 1; }
+    }
+    table.cleaned = 1;
+  }
   function aliasFor(table, kind, original, ext) {
     if (isKept(original)) return original;
-    if (table.kinds[original] || OWN_ALIAS.test(original)) return original;
+    if (table.kinds[original] || OWN_ALIAS.test(original) || OWN_PART.test(original)) return original;
     const key = kind + '\u0000' + original;
     if (table.forward[key]) return table.forward[key];
     const n = (table.counters[kind] || 0) + 1;
@@ -1278,6 +1289,7 @@
    */
   function strip(input, opts, table) {
     table = table || createAliasTable();
+    dropOwnAliases(table);
     const before = aliasCount(table);
     const ctx = makeCtx(opts, table);
     KEEP = new Set((ctx.o.keepVisible || []).map((k) => String(k).trim()).filter(Boolean));
@@ -1867,6 +1879,7 @@
   /** Put the original names back into text that came from the AI. Secrets are never restored. */
   function restore(text, table) {
     if (!text || !table || !table.forward) return { text, count: 0 };
+    dropOwnAliases(table);
     const pairs = [];
     for (const key of Object.keys(table.forward)) {
       const orig = key.slice(key.indexOf('\u0000') + 1);
@@ -1884,5 +1897,5 @@
     return { text: t, count };
   }
 
-  return { strip, restore, looksLikeLog, containsKnown, hideNames, detectKinds, createAliasTable, aliasCount, DEFAULTS, version: '0.5.3' };
+  return { strip, restore, looksLikeLog, containsKnown, hideNames, detectKinds, createAliasTable, aliasCount, DEFAULTS, version: '0.5.4' };
 });
