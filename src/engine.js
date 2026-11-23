@@ -1897,5 +1897,5 @@
     return { text: t, count };
   }
 
-  return { strip, restore, looksLikeLog, containsKnown, hideNames, detectKinds, createAliasTable, aliasCount, DEFAULTS, version: '0.5.4' };
+  return { strip, restore, looksLikeLog, containsKnown, hideNames, detectKinds, createAliasTable, aliasCount, DEFAULTS, version: '0.5.5' };
 });
