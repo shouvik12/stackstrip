@@ -45,7 +45,6 @@
     showAliases();
   };
 
-  $('openApp').onclick = () => { chrome.runtime.sendMessage({ type: 'open-workspace' }); window.close(); };
 
   load();
 })();

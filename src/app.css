@@ -85,3 +85,7 @@ h2 { font-size: 16px; margin: 8px 0 8px; font-weight: 600; }
 footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; padding: 10px 24px 14px; color: var(--mute); font-size: 12.5px; border-top: 1px solid var(--line); }
 kbd { font: 11.5px ui-monospace, Menlo, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; background: var(--panel); }
 @media (max-width: 900px) { .tool { grid-template-columns: minmax(0, 1fr); height: auto; } .tool textarea, .tool pre { height: 320px; flex: none; } .tool.small { height: auto; } .tool.small textarea, .tool.small pre { height: 180px; } }
+.restore[hidden]{display:none !important}
+.settings{margin:8px 24px;border:1px solid rgba(127,127,127,.3);border-radius:10px;padding:6px 12px}
+.settings summary{cursor:pointer;font-weight:600;padding:4px 0}
+.settings iframe{width:100%;height:480px;border:0;margin-top:8px}

@@ -22,6 +22,10 @@
       <label title="Off: every line is kept, only names are hidden"><input type="checkbox" id="trim" /> Trim long logs to the failure</label>
     </div>
   </header>
+  <details class="settings">
+    <summary>⚙ Settings</summary>
+    <iframe src="popup.html" title="StackStrip settings"></iframe>
+  </details>
 
   <main>
     <section class="tool">
@@ -66,7 +70,7 @@
       <div id="words" class="words"></div>
     </section>
 
-    <section class="restore">
+    <section class="restore" hidden>
       <h2>Got an answer back? Put your real names back in</h2>
       <div class="tool small">
         <div class="pane">
