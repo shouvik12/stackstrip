@@ -222,7 +222,7 @@
     wrap.innerHTML = `
       <div class="card" role="dialog" aria-label="StackStrip preview">
         <header>
-          <div class="brand"><span class="logo"></span><b>StackStrip</b><span class="tag">Debug the failure, not the company's internals.</span></div>
+          <div class="brand"><svg class="logo" viewBox="0 0 128 128" aria-hidden="true"><rect width="128" height="128" rx="28" fill="#23305a"/><path d="M40 30 C28 30 30 44 30 52 C30 58 26 62 20 64 C26 66 30 70 30 76 C30 84 28 98 40 98" fill="none" stroke="#f4efe4" stroke-width="8" stroke-linecap="round"/><path d="M88 30 C100 30 98 44 98 52 C98 58 102 62 108 64 C102 66 98 70 98 76 C98 84 100 98 88 98" fill="none" stroke="#f4efe4" stroke-width="8" stroke-linecap="round"/><path d="M42 56 C42 50 48 48 56 50 L64 53 L72 50 C80 48 86 50 86 56 L86 68 C86 76 78 80 70 76 L64 73 L58 76 C50 80 42 76 42 68 Z" fill="#ffb547"/><ellipse cx="54" cy="62" rx="6" ry="4.5" fill="#23305a"/><ellipse cx="74" cy="62" rx="6" ry="4.5" fill="#23305a"/></svg><b>StackStrip</b><span class="tag">Debug the failure, not the company's internals.</span></div>
           <button class="x" title="Cancel (Esc)">✕</button>
         </header>
         <div class="files" ${isFiles ? '' : 'hidden'}></div>
@@ -506,7 +506,7 @@
       wrap.className = 'overlay';
       wrap.innerHTML = `
         <div class="card small" role="dialog" aria-label="StackStrip — files it can't check">
-          <header><div class="brand"><span class="logo"></span><b>StackStrip</b></div><button class="x" title="Cancel (Esc)">✕</button></header>
+          <header><div class="brand"><svg class="logo" viewBox="0 0 128 128" aria-hidden="true"><rect width="128" height="128" rx="28" fill="#23305a"/><path d="M40 30 C28 30 30 44 30 52 C30 58 26 62 20 64 C26 66 30 70 30 76 C30 84 28 98 40 98" fill="none" stroke="#f4efe4" stroke-width="8" stroke-linecap="round"/><path d="M88 30 C100 30 98 44 98 52 C98 58 102 62 108 64 C102 66 98 70 98 76 C98 84 100 98 88 98" fill="none" stroke="#f4efe4" stroke-width="8" stroke-linecap="round"/><path d="M42 56 C42 50 48 48 56 50 L64 53 L72 50 C80 48 86 50 86 56 L86 68 C86 76 78 80 70 76 L64 73 L58 76 C50 80 42 76 42 68 Z" fill="#ffb547"/><ellipse cx="54" cy="62" rx="6" ry="4.5" fill="#23305a"/><ellipse cx="74" cy="62" rx="6" ry="4.5" fill="#23305a"/></svg><b>StackStrip</b></div><button class="x" title="Cancel (Esc)">✕</button></header>
           <div class="body">
             <h3>${files.length === 1 ? 'This file' : 'These ' + files.length + ' files'} can't be checked</h3>
             <p class="m">StackStrip only cleans text. Anything inside ${files.length === 1 ? 'it' : 'them'} will be sent as is — nothing in ${files.length === 1 ? 'it' : 'them'} has been hidden.</p>
@@ -586,10 +586,7 @@
     .brand { display: flex; align-items: center; gap: 10px; font-size: 14px; }
     .brand b { font-weight: 700; letter-spacing: .2px; }
     .tag { color: #8a93a6; font-size: 12.5px; }
-    .logo { width: 18px; height: 18px; border-radius: 5px; background:
-      linear-gradient(#5eead4,#5eead4) 3px 4px/12px 2px no-repeat,
-      linear-gradient(#f87171,#f87171) 3px 8px/7px 2px no-repeat,
-      linear-gradient(#5eead4,#5eead4) 3px 12px/10px 2px no-repeat, #1b2130; }
+    .logo { width: 18px; height: 18px; flex: none; }
     .x { background: none; border: 0; color: #8a93a6; font-size: 15px; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
     .x:hover { background: #1b2130; color: #e6e9ef; }
     .stats { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 18px 4px; }
